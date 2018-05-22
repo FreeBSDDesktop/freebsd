@@ -39,8 +39,17 @@
 
 struct timer_list {
 	struct callout callout;
+#if __LinuxKPI_version >= 40015
+	void    (*function) (struct timer_list *);
+	/*
+	 * This field is temporary until we can get all users up to date
+	 * and fix the callback routine in linux_compat.c
+	 */
+	struct timer_list *data;
+#else
 	void    (*function) (unsigned long);
 	unsigned long data;
+#endif
 	int expires;
 };
 
@@ -48,10 +57,26 @@ extern unsigned long linux_timer_hz_mask;
 
 #define	TIMER_IRQSAFE	0x0001
 
+#if __LinuxKPI_version >= 40015
+
+#define	from_timer(var, cb, field)					\
+	container_of(cb, typeof(*var), field)
+
+#define	__timer_setup(timer, func) do {					\
+	(timer)->function = (func);					\
+	(timer)->data = (timer);					\
+	callout_init(&(timer)->callout, 1);				\
+} while (0)
+
+#define	timer_setup(timer, func, flags)					\
+	__timer_setup((timer), (func))
+
+#else
+
 #define	setup_timer(timer, func, dat) do {				\
 	(timer)->function = (func);					\
 	(timer)->data = (dat);						\
-	callout_init(&(timer)->callout, 1);			\
+	callout_init(&(timer)->callout, 1);				\
 } while (0)
 
 #define	__setup_timer(timer, func, dat, flags) do {			\
@@ -62,8 +87,10 @@ extern unsigned long linux_timer_hz_mask;
 #define	init_timer(timer) do {						\
 	(timer)->function = NULL;					\
 	(timer)->data = 0;						\
-	callout_init(&(timer)->callout, 1);			\
+	callout_init(&(timer)->callout, 1);				\
 } while (0)
+
+#endif
 
 extern void mod_timer(struct timer_list *, int);
 extern void add_timer(struct timer_list *);

@@ -56,6 +56,7 @@ struct radix_tree_root {
 
 struct radix_tree_iter {
 	unsigned long index;
+	unsigned long next_index;
 };
 
 #define	RADIX_TREE_INIT(mask)						\
@@ -79,5 +80,6 @@ void	*radix_tree_lookup(struct radix_tree_root *, unsigned long);
 void	*radix_tree_delete(struct radix_tree_root *, unsigned long);
 int	radix_tree_insert(struct radix_tree_root *, unsigned long, void *);
 bool	radix_tree_iter_find(struct radix_tree_root *, struct radix_tree_iter *, void ***);
+void	radix_tree_iter_delete(struct radix_tree_root *, struct radix_tree_iter *, void **);
 
 #endif	/* _LINUX_RADIX_TREE_H_ */

@@ -54,9 +54,12 @@
 #define	TASK_RUNNING		0x0000
 #define	TASK_INTERRUPTIBLE	0x0001
 #define	TASK_UNINTERRUPTIBLE	0x0002
+#define	TASK_PARKED		0x0040
+#define	TASK_WAKEKILL		0x0100
+#define	TASK_WAKING		0x0200
+
 #define	TASK_NORMAL		(TASK_INTERRUPTIBLE | TASK_UNINTERRUPTIBLE)
-#define	TASK_WAKING		0x0100
-#define	TASK_PARKED		0x0200
+#define	TASK_KILLABLE		(TASK_WAKEKILL | TASK_UNINTERRUPTIBLE)
 
 #define	TASK_COMM_LEN		(MAXCOMLEN + 1)
 
@@ -89,6 +92,7 @@ struct task_struct {
 #define	task_pid_group_leader(task) (task)->task_thread->td_proc->p_pid
 #define	task_pid(task)		((task)->pid)
 #define	task_pid_nr(task)	((task)->pid)
+#define	task_pid_vnr(task)	((task)->pid)
 #define	get_pid(x)		(x)
 #define	put_pid(x)		do { } while (0)
 #define	current_euid()	(curthread->td_ucred->cr_uid)

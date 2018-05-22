@@ -31,25 +31,32 @@
 #ifndef _ASM_UACCESS_H_
 #define _ASM_UACCESS_H_
 
-#include <linux/uaccess.h>
+/*
 
-static inline long
-copy_to_user(void *to, const void *from, unsigned long n)
-{
-	if (linux_copyout(from, to, n) != 0)
-		return n;
-	return 0;
-}
-#define	__copy_to_user(...)	copy_to_user(__VA_ARGS__)
+Disable. Need __{get,put}_user_size() functions...
+Use defaults in linux/uaccess.h for now.
 
-static inline long
-copy_from_user(void *to, const void *from, unsigned long n)
-{
-	if (linux_copyin(from, to, n) != 0)
-		return n;
-	return 0;
-}
-#define	__copy_from_user(...)	copy_from_user(__VA_ARGS__)
-#define	__copy_in_user(...)	copy_from_user(__VA_ARGS__)
+#define	user_access_begin() stac()
+#define	user_access_end()   clac()
+
+#define	unsafe_put_user(x, ptr, err_label)				\
+	do {								\
+		int __error;						\
+		__typeof__(*(ptr)) __x = (x);				\
+		__put_user_size(__x, (ptr), sizeof(*(ptr)),		\
+		    __error, -EFAULT);					\
+		if (unlikely(__error)) goto err_label;			\
+	} while (0)
+
+#define	unsafe_get_user(x, ptr, err_label)				\
+	do {								\
+		int __error;						\
+		__inttype(*(ptr)) __x;					\
+		__get_user_size(__x, (ptr), sizeof(*(ptr)),		\
+		    __error, -EFAULT);					\
+		(x) = (__force __typeof__(*(ptr)))__x;			\
+		if (unlikely(__error)) goto err_label;			\
+	} while (0)
+*/
 
 #endif	/* _ASM_UACCESS_H_ */

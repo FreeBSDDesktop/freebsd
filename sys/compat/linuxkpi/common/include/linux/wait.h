@@ -47,12 +47,19 @@
 #define	might_sleep()							\
 	WITNESS_WARN(WARN_GIANTOK | WARN_SLEEPOK, NULL, "might_sleep()")
 
+#define	might_sleep_if(cond) do { if (cond) might_sleep(); } while (0)
+
+#if __LinuxKPI_version >= 40013
+#define	__add_wait_queue_entry_tail(wqh,wq) __add_wait_queue_tail((wqh),(wq))
+#define	wait_queue_entry wait_queue
+#define	wait_queue_entry_t wait_queue_t
+#endif
+
 struct wait_queue;
 struct wait_queue_head;
 
 typedef struct wait_queue wait_queue_t;
 typedef struct wait_queue_head wait_queue_head_t;
-
 typedef int wait_queue_func_t(wait_queue_t *, unsigned int, int, void *);
 
 /*
@@ -63,12 +70,23 @@ struct wait_queue {
 	unsigned int flags;	/* always 0 */
 	void *private;
 	wait_queue_func_t *func;
-	struct list_head task_list;
+	union {
+		/*
+		 * Changes in Linux v4.13.
+		 * Remove deprecated code when we
+		 * don't depend on < 4.13 any more.
+		 */
+		struct list_head task_list; /* < v.4.13 */
+		struct list_head entry; /* >= v4.13 */
+	};
 };
 
 struct wait_queue_head {
 	spinlock_t lock;
-	struct list_head task_list;
+	union {
+		struct list_head task_list; /* < v.4.13 */
+		struct list_head head; /* >= v4.13 */
+	};
 };
 
 /*
@@ -106,7 +124,11 @@ extern wait_queue_func_t default_wake_function;
 	INIT_LIST_HEAD(&(wqh)->task_list);				\
 } while (0)
 
+void linux_init_wait_entry(wait_queue_t *wait, int flags);
 void linux_wake_up(wait_queue_head_t *, unsigned int, int, bool);
+
+#define	init_wait_entry(w, f)						\
+	linux_init_wait_entry(w, f)
 
 #define	wake_up(wqh)							\
 	linux_wake_up(wqh, TASK_NORMAL, 1, false)
@@ -168,6 +190,11 @@ int linux_wait_event_common(wait_queue_head_t *, wait_queue_t *, int,
 #define	wait_event_timeout(wqh, cond, timeout) ({			\
 	__wait_event_common(wqh, cond, timeout, TASK_UNINTERRUPTIBLE,	\
 	    NULL);							\
+})
+
+#define	wait_event_killable(wqh, cond) ({				\
+	__wait_event_common(wqh, cond, MAX_SCHEDULE_TIMEOUT,		\
+	    TASK_KILLABLE, NULL);					\
 })
 
 #define	wait_event_interruptible(wqh, cond) ({				\

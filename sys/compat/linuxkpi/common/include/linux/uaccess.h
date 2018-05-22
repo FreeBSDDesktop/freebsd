@@ -42,6 +42,8 @@
 
 #include <linux/compiler.h>
 
+#include <asm/uaccess.h>
+
 #define	VERIFY_READ	VM_PROT_READ
 #define	VERIFY_WRITE	VM_PROT_WRITE
 
@@ -67,6 +69,25 @@ extern int linux_copyout(const void *kaddr, void *uaddr, size_t len);
 extern size_t linux_clear_user(void *uaddr, size_t len);
 extern int linux_access_ok(int rw, const void *uaddr, size_t len);
 
+static inline long
+copy_to_user(void *to, const void *from, unsigned long n)
+{
+	if (linux_copyout(from, to, n) != 0)
+		return n;
+	return 0;
+}
+#define	__copy_to_user(...)	copy_to_user(__VA_ARGS__)
+
+static inline long
+copy_from_user(void *to, const void *from, unsigned long n)
+{
+	if (linux_copyin(from, to, n) != 0)
+		return n;
+	return 0;
+}
+#define	__copy_from_user(...)	copy_from_user(__VA_ARGS__)
+#define	__copy_in_user(...)	copy_from_user(__VA_ARGS__)
+
 /*
  * NOTE: Each pagefault_disable() call must have a corresponding
  * pagefault_enable() call in the same scope. The former creates a new
@@ -87,5 +108,21 @@ pagefault_disabled(void)
 {
 	return ((curthread->td_pflags & TDP_NOFAULTING) != 0);
 }
+
+#ifndef	user_access_begin
+#define	user_access_begin() do { } while (0)
+#define	user_access_end() do { } while (0)
+
+#define	unsafe_get_user(x, ptr, err) do {		\
+		if (unlikely(__get_user(x, ptr)))	\
+			goto err;			\
+	} while (0)
+
+#define	unsafe_put_user(x, ptr, err) do {		\
+		if (unlikely(__put_user(x, ptr)))	\
+			goto err;			\
+	} while (0)
+
+#endif
 
 #endif					/* _LINUX_UACCESS_H_ */

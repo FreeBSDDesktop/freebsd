@@ -188,6 +188,15 @@ default_wake_function(wait_queue_t *wq, unsigned int state, int flags,
 }
 
 void
+linux_init_wait_entry(wait_queue_t *wait, int flags)
+{
+	wait->flags = flags;
+	wait->private = current;
+	wait->func = autoremove_wake_function;
+	INIT_LIST_HEAD(&wait->task_list);
+}
+
+void
 linux_wake_up(wait_queue_head_t *wqh, unsigned int state, int nr, bool locked)
 {
 	wait_queue_t *pos, *next;
