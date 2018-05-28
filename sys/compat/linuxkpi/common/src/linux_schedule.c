@@ -149,7 +149,7 @@ bool
 linux_signal_pending_state(long state, struct task_struct *task)
 {
 
-	MPASS((state & ~(TASK_PARKED | TASK_NORMAL)) == 0);
+	MPASS((state & ~TASK_NORMAL) == 0);
 
 	if ((state & TASK_INTERRUPTIBLE) == 0)
 		return (false);

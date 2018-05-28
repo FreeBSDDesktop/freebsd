@@ -56,7 +56,6 @@ struct radix_tree_root {
 
 struct radix_tree_iter {
 	unsigned long index;
-	unsigned long next_index;
 };
 
 #define	RADIX_TREE_INIT(mask)						\

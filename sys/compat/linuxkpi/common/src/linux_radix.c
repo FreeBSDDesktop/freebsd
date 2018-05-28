@@ -112,7 +112,6 @@ restart:
 		}
 	} while (height != -1);
 	iter->index = index;
-	iter->next_index = index++;
 	return (true);
 }
 
@@ -168,7 +167,7 @@ radix_tree_iter_delete(struct radix_tree_root *root,
     struct radix_tree_iter *iter, void **slot)
 {
 	if (radix_tree_delete(root, iter->index)) {
-		iter->index = iter->next_index;
+		iter->index++;
 	}
 }
 

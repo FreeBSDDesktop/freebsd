@@ -241,7 +241,6 @@ idr_remove_locked(struct idr *idr, int id)
 		il = il->ary[idx];
 		layer--;
 	}
-	res = il->ary[idx];
 	idx = id & IDR_MASK;
 	/*
 	 * At this point we've set free space bitmaps up the whole tree.
@@ -251,6 +250,7 @@ idr_remove_locked(struct idr *idr, int id)
 	if (il == NULL || (il->bitmap & (1 << idx)) != 0)
 		panic("idr_remove: Item %d not allocated (%p, %p)\n",
 		    id, idr, il);
+	res = il->ary[idx];
 	il->ary[idx] = NULL;
 	il->bitmap |= 1 << idx;
 
