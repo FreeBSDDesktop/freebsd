@@ -54,12 +54,9 @@
 #define	TASK_RUNNING		0x0000
 #define	TASK_INTERRUPTIBLE	0x0001
 #define	TASK_UNINTERRUPTIBLE	0x0002
-#define	TASK_PARKED		0x0040
-#define	TASK_WAKEKILL		0x0080
-#define	TASK_WAKING		0x0100
-
-#define	TASK_KILLABLE		(TASK_WAKEKILL | TASK_UNINTERRUPTIBLE)
 #define	TASK_NORMAL		(TASK_INTERRUPTIBLE | TASK_UNINTERRUPTIBLE)
+#define	TASK_WAKING		0x0100
+#define	TASK_PARKED		0x0200
 
 #define	TASK_COMM_LEN		(MAXCOMLEN + 1)
 
@@ -156,14 +153,12 @@ linux_schedule_get_interrupt_value(struct task_struct *task)
 	(void)linux_schedule_timeout(MAX_SCHEDULE_TIMEOUT)
 #define	schedule_timeout(timeout)			\
 	linux_schedule_timeout(timeout)
-#define	schedule_timeout_killable(timeout) ({		\
-	set_current_state(TASK_KILLABLE);		\
-	schedule_timeout(timeout);			\
-})
 #define	schedule_timeout_interruptible(timeout) ({	\
 	set_current_state(TASK_INTERRUPTIBLE);		\
 	schedule_timeout(timeout);			\
 })
+#define	schedule_timeout_killable(timeout)		\
+	schedule_timeout_interruptible(timeout);
 #define	schedule_timeout_uninterruptible(timeout) ({	\
 	set_current_state(TASK_UNINTERRUPTIBLE);	\
 	schedule_timeout(timeout);			\

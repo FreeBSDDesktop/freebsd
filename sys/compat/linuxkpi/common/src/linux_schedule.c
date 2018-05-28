@@ -47,9 +47,9 @@ linux_add_to_sleepqueue(void *wchan, struct task_struct *task,
 {
 	int flags, ret;
 
-	/* MPASS((state & ~TASK_NORMAL) == 0); */
+	MPASS((state & ~(TASK_PARKED | TASK_NORMAL)) == 0);
 
-	flags = SLEEPQ_SLEEP | ((state & (TASK_KILLABLE | TASK_INTERRUPTIBLE)) != 0 ?
+	flags = SLEEPQ_SLEEP | ((state & TASK_INTERRUPTIBLE) != 0 ?
 	    SLEEPQ_INTERRUPTIBLE : 0);
 
 	sleepq_add(wchan, NULL, wmesg, flags, 0);
@@ -57,7 +57,7 @@ linux_add_to_sleepqueue(void *wchan, struct task_struct *task,
 		sleepq_set_timeout(wchan, timeout);
 
 	DROP_GIANT();
-	if ((state & (TASK_KILLABLE | TASK_INTERRUPTIBLE)) != 0) {
+	if ((state & TASK_INTERRUPTIBLE) != 0) {
 		if (timeout == 0)
 			ret = -sleepq_wait_sig(wchan, 0);
 		else
@@ -149,13 +149,11 @@ bool
 linux_signal_pending_state(long state, struct task_struct *task)
 {
 
-	/* MPASS((state & ~TASK_NORMAL) == 0); */
+	MPASS((state & ~(TASK_PARKED | TASK_NORMAL)) == 0);
 
-	if ((state & TASK_KILLABLE) != 0)
-		return (linux_fatal_signal_pending(task));
-	if ((state & TASK_INTERRUPTIBLE) != 0)
-		return (linux_signal_pending(task));
-	return (false);
+	if ((state & TASK_INTERRUPTIBLE) == 0)
+		return (false);
+	return (linux_signal_pending(task));
 }
 
 void
@@ -186,14 +184,12 @@ int
 default_wake_function(wait_queue_t *wq, unsigned int state, int flags,
     void *key __unused)
 {
-
 	return (wake_up_task(wq->private, state));
 }
 
 void
 linux_init_wait_entry(wait_queue_t *wait, int flags)
 {
-
 	wait->flags = flags;
 	wait->private = current;
 	wait->func = autoremove_wake_function;

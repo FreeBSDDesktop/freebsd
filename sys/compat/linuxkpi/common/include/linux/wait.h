@@ -194,7 +194,7 @@ int linux_wait_event_common(wait_queue_head_t *, wait_queue_t *, int,
 
 #define	wait_event_killable(wqh, cond) ({				\
 	__wait_event_common(wqh, cond, MAX_SCHEDULE_TIMEOUT,		\
-	    TASK_KILLABLE, NULL);					\
+	    TASK_INTERRUPTIBLE, NULL);					\
 })
 
 #define	wait_event_interruptible(wqh, cond) ({				\
