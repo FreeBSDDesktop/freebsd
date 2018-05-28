@@ -153,12 +153,12 @@ linux_schedule_get_interrupt_value(struct task_struct *task)
 	(void)linux_schedule_timeout(MAX_SCHEDULE_TIMEOUT)
 #define	schedule_timeout(timeout)			\
 	linux_schedule_timeout(timeout)
+#define	schedule_timeout_killable(timeout)		\
+	schedule_timeout_interruptible(timeout)
 #define	schedule_timeout_interruptible(timeout) ({	\
 	set_current_state(TASK_INTERRUPTIBLE);		\
 	schedule_timeout(timeout);			\
 })
-#define	schedule_timeout_killable(timeout)		\
-	schedule_timeout_interruptible(timeout);
 #define	schedule_timeout_uninterruptible(timeout) ({	\
 	set_current_state(TASK_UNINTERRUPTIBLE);	\
 	schedule_timeout(timeout);			\
