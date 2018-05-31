@@ -64,7 +64,7 @@ struct sg_page_iter {
 	} internal;
 };
 
-#define	SCATTERLIST_MAX_SEGMENT	(UINT_MAX & PAGE_MASK)
+#define	SCATTERLIST_MAX_SEGMENT	(UINT_MAX & ~(PAGE_SIZE-1))
 
 #define	SG_MAX_SINGLE_ALLOC	(PAGE_SIZE / sizeof(struct scatterlist))
 

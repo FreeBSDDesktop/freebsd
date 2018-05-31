@@ -186,6 +186,5 @@ static inline struct fd fdget(unsigned int fd)
 
 #define	file		linux_file
 #define	fget(...)	linux_fget(__VA_ARGS__)
-#define	fcheck(...)	linux_fget(__VA_ARGS__)
 
 #endif	/* _LINUX_FILE_H_ */
