@@ -720,7 +720,6 @@ idr_for_each_layer(struct idr_layer *il, int offset, int layer,
 int
 idr_for_each(struct idr *idp, int (*f)(int id, void *p, void *data), void *data)
 {
-
 	return (idr_for_each_layer(idp->top, 0, idp->layers - 1, f, data));
 }
 
