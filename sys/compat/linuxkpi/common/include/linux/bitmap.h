@@ -245,16 +245,12 @@ bitmap_equal(const unsigned long *pa,
 
 static inline void
 bitmap_complement(unsigned long *dst, const unsigned long *src,
-    unsigned size)
+    const unsigned int size)
 {
-	const unsigned int end = BIT_WORD(size);
-	const unsigned int tail = size & (BITS_PER_LONG - 1);
+	const unsigned int end = BITS_TO_LONGS(size);
 	unsigned int i;
 
 	for (i = 0; i != end; i++)
-		dst[i] = ~src[i];
-
-	if (tail)
 		dst[i] = ~src[i];
 }
 

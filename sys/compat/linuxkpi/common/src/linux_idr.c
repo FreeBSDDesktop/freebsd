@@ -230,7 +230,7 @@ idr_remove_locked(struct idr *idr, int id)
 	il = idr->top;
 	layer = idr->layers - 1;
 	if (il == NULL || id > idr_max(idr))
-		return NULL;
+		return (NULL);
 	/*
 	 * Walk down the tree to this item setting bitmaps along the way
 	 * as we know at least one item will be free along this path.
@@ -728,14 +728,14 @@ static int
 idr_has_entry(int id, void *p, void *data)
 {
 
-	return 1;
+	return (1);
 }
 
 bool
 idr_is_empty(struct idr *idp)
 {
 
-	return !idr_for_each(idp, idr_has_entry, NULL);
+	return (idr_for_each(idp, idr_has_entry, NULL) == 0);
 }
 
 int
