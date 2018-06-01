@@ -166,7 +166,6 @@ void
 radix_tree_iter_delete(struct radix_tree_root *root,
     struct radix_tree_iter *iter, void **slot)
 {
-
 	radix_tree_delete(root, iter->index);
 }
 

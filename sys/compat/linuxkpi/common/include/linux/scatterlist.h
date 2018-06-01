@@ -64,7 +64,7 @@ struct sg_page_iter {
 	} internal;
 };
 
-#define	SCATTERLIST_MAX_SEGMENT	(UINT_MAX & ~(PAGE_SIZE-1))
+#define	SCATTERLIST_MAX_SEGMENT	(-1U & ~(PAGE_SIZE - 1))
 
 #define	SG_MAX_SINGLE_ALLOC	(PAGE_SIZE / sizeof(struct scatterlist))
 
@@ -297,8 +297,8 @@ __sg_alloc_table_from_pages(struct sg_table *sgt,
 	int rc;
 	struct scatterlist *s;
 
-	if (WARN_ON(!max_segment || offset_in_page(max_segment)))
-		return -EINVAL;
+	if (__predict_false(!max_segment || offset_in_page(max_segment)))
+		return (-EINVAL);
 
 	len = 0;
 	for (segs = i = 1; i < count; ++i) {
@@ -340,8 +340,9 @@ sg_alloc_table_from_pages(struct sg_table *sgt,
     unsigned long off, unsigned long size,
     gfp_t gfp_mask)
 {
-	return __sg_alloc_table_from_pages(sgt, pages, count, off, size,
-	    SCATTERLIST_MAX_SEGMENT, gfp_mask);
+
+	return (__sg_alloc_table_from_pages(sgt, pages, count, off, size,
+	    SCATTERLIST_MAX_SEGMENT, gfp_mask));
 }
 
 static inline int

@@ -81,11 +81,6 @@ prefetch(void *x)
 #define CTLTYPE_U64 CTLTYPE_QUAD
 #endif
 
-#if (__FreeBSD_version >= 900030) || \
-    ((__FreeBSD_version >= 802507) && (__FreeBSD_version < 900000))
-#define SBUF_DRAIN 1
-#endif
-
 struct adapter;
 typedef struct adapter adapter_t;
 
@@ -824,6 +819,7 @@ struct adapter {
 	void *iscsi_ulp_softc;	/* (struct cxgbei_data *) */
 	void *ccr_softc;	/* (struct ccr_softc *) */
 	struct l2t_data *l2t;	/* L2 table */
+	struct smt_data *smt;	/* Source MAC Table */
 	struct tid_info tids;
 
 	uint8_t doorbells;

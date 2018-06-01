@@ -36,7 +36,7 @@
 
 enum hrtimer_mode {
 	HRTIMER_MODE_REL,
-	HRTIMER_MODE_REL_PINNED,
+	HRTIMER_MODE_REL_PINNED = HRTIMER_MODE_REL,
 };
 
 enum hrtimer_restart {
@@ -48,8 +48,8 @@ struct hrtimer {
 	enum hrtimer_restart (*function)(struct hrtimer *);
 	struct mtx mtx;
 	struct callout callout;
-	s64 expires; /* relative time in nanoseconds */
-	s64 precision; /* in nanoseconds */
+	s64 expires;	/* relative time in nanoseconds */
+	s64 precision;	/* in nanoseconds */
 };
 
 #define	hrtimer_active(hrtimer)	linux_hrtimer_active(hrtimer)
@@ -75,7 +75,7 @@ struct hrtimer {
 } while (0)
 
 #define	hrtimer_forward_now(hrtimer, interval) do {		\
-	linux_hrtimer_forward_now(hrtimer, interval)		\
+	linux_hrtimer_forward_now(hrtimer, interval);		\
 } while (0)
 
 bool	linux_hrtimer_active(struct hrtimer *);

@@ -61,6 +61,7 @@ linux_hrtimer_active(struct hrtimer *hrtimer)
 	mtx_lock(&hrtimer->mtx);
 	ret = callout_active(&hrtimer->callout);
 	mtx_unlock(&hrtimer->mtx);
+
 	return (ret);
 }
 
@@ -79,17 +80,15 @@ void
 linux_hrtimer_init(struct hrtimer *hrtimer)
 {
 
-	hrtimer->function = NULL;
-	hrtimer->expires = 0;
-	hrtimer->precision = 0;
-	mtx_init(&hrtimer->mtx, "hrtimer", NULL, MTX_DEF | MTX_RECURSE);
+	memset(hrtimer, 0, sizeof(*hrtimer));
+	mtx_init(&hrtimer->mtx, "hrtimer", NULL,
+	    MTX_DEF | MTX_RECURSE | MTX_NOWITNESS);
 	callout_init_mtx(&hrtimer->callout, &hrtimer->mtx, 0);
 }
 
 void
 linux_hrtimer_set_expires(struct hrtimer *hrtimer, ktime_t time)
 {
-
 	hrtimer->expires = ktime_to_ns(time);
 }
 
@@ -121,3 +120,4 @@ linux_hrtimer_forward_now(struct hrtimer *hrtimer, ktime_t interval)
 	    nstosbt(hrtimer->precision), hrtimer_call_handler, hrtimer, 0);
 	mtx_unlock(&hrtimer->mtx);
 }
+
