@@ -123,7 +123,7 @@ ww_mutex_destroy(struct ww_mutex *lock)
 static inline void
 ww_acquire_init(struct ww_acquire_ctx *ctx, struct ww_class *ww_class)
 {
-	// NOP is deliberate
+	/* NOP is deliberate */
 }
 
 static inline void
@@ -136,13 +136,13 @@ ww_mutex_init(struct ww_mutex *lock, struct ww_class *ww_class)
 static inline void
 ww_acquire_fini(struct ww_acquire_ctx *ctx)
 {
-	// NOP is deliberate
+	/* NOP is deliberate */
 }
 
 static inline void
 ww_acquire_done(struct ww_acquire_ctx *ctx)
 {
-	// NOP is deliberate
+	/* NOP is deliberate */
 }
 
 #endif					/* _LINUX_WW_MUTEX_H_ */
