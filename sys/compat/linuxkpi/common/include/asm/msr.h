@@ -32,6 +32,6 @@
 #include <machine/cpufunc.h>
 
 #define	rdmsrl(msr, val)	((val) = rdmsr(msr))
-#define	rdmsrl_safe(msr, val)	rdmsr_safe((msr), (val))
+#define	rdmsrl_safe(msr, val)	rdmsr_safe(msr, val)
 
 #endif /* _ASM_MSR_H_ */

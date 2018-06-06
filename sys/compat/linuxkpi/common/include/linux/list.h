@@ -341,19 +341,12 @@ hlist_empty(const struct hlist_head *h)
 }
 
 static inline void
-__hlist_del(struct hlist_node *n)
-{
-
-	WRITE_ONCE(*(n->pprev), n->next);
-        if (n->next)
-                n->next->pprev = n->pprev;
-}
-
-static inline void
 hlist_del(struct hlist_node *n)
 {
 
-	__hlist_del(n);
+	WRITE_ONCE(*(n->pprev), n->next);
+	if (n->next != NULL)
+		n->next->pprev = n->pprev;
 }
 
 static inline void
@@ -371,7 +364,7 @@ hlist_add_head(struct hlist_node *n, struct hlist_head *h)
 {
 
 	n->next = h->first;
-	if (h->first)
+	if (h->first != NULL)
 		h->first->pprev = &n->next;
 	WRITE_ONCE(h->first, n);
 	n->pprev = &h->first;
@@ -395,8 +388,8 @@ hlist_add_behind(struct hlist_node *n, struct hlist_node *prev)
 	WRITE_ONCE(prev->next, n);
 	n->pprev = &prev->next;
 
-	if (n->next)
-		n->next->pprev  = &n->next;
+	if (n->next != NULL)
+		n->next->pprev = &n->next;
 }
 
 static inline void

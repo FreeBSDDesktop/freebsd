@@ -130,17 +130,20 @@ ktime_add(ktime_t lhs, ktime_t rhs)
 static inline int
 ktime_compare(const ktime_t cmp1, const ktime_t cmp2)
 {
-	if (cmp1 < cmp2)
-		return -1;
+
 	if (cmp1 > cmp2)
-		return 1;
-	return 0;
+		return (1);
+	else if (cmp1 < cmp2)
+		return (-1);
+	else
+		return (0);
 }
 
 static inline bool
 ktime_after(const ktime_t cmp1, const ktime_t cmp2)
 {
-	return ktime_compare(cmp1, cmp2) > 0;
+
+	return (ktime_compare(cmp1, cmp2) > 0);
 }
 
 static inline ktime_t

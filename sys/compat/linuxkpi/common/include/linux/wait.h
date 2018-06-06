@@ -47,18 +47,17 @@
 #define	might_sleep()							\
 	WITNESS_WARN(WARN_GIANTOK | WARN_SLEEPOK, NULL, "might_sleep()")
 
-#define	might_sleep_if(cond) do { if (cond) might_sleep(); } while (0)
-
-#if __LinuxKPI_version >= 40013
-#define	__add_wait_queue_entry_tail(wqh,wq) __add_wait_queue_tail((wqh),(wq))
-#define	wait_queue_entry wait_queue
-#define	wait_queue_entry_t wait_queue_t
-#endif
+#define	might_sleep_if(cond) do { \
+	if (cond) { might_sleep(); } \
+} while (0)
 
 struct wait_queue;
 struct wait_queue_head;
 
+#define	wait_queue_entry wait_queue
+
 typedef struct wait_queue wait_queue_t;
+typedef struct wait_queue_entry wait_queue_entry_t;
 typedef struct wait_queue_head wait_queue_head_t;
 typedef int wait_queue_func_t(wait_queue_t *, unsigned int, int, void *);
 
@@ -71,12 +70,7 @@ struct wait_queue {
 	void *private;
 	wait_queue_func_t *func;
 	union {
-		/*
-		 * Changes in Linux v4.13.
-		 * Remove deprecated code when we
-		 * don't depend on < 4.13 any more.
-		 */
-		struct list_head task_list; /* < v.4.13 */
+		struct list_head task_list; /* < v4.13 */
 		struct list_head entry; /* >= v4.13 */
 	};
 };
@@ -84,7 +78,7 @@ struct wait_queue {
 struct wait_queue_head {
 	spinlock_t lock;
 	union {
-		struct list_head task_list; /* < v.4.13 */
+		struct list_head task_list; /* < v4.13 */
 		struct list_head head; /* >= v4.13 */
 	};
 };
@@ -124,12 +118,11 @@ extern wait_queue_func_t default_wake_function;
 	INIT_LIST_HEAD(&(wqh)->task_list);				\
 } while (0)
 
-void linux_init_wait_entry(wait_queue_t *wait, int flags);
+void linux_init_wait_entry(wait_queue_t *, int);
 void linux_wake_up(wait_queue_head_t *, unsigned int, int, bool);
 
-#define	init_wait_entry(w, f)						\
-	linux_init_wait_entry(w, f)
-
+#define	init_wait_entry(wq, flags)					\
+        linux_init_wait_entry(wq, flags)
 #define	wake_up(wqh)							\
 	linux_wake_up(wqh, TASK_NORMAL, 1, false)
 #define	wake_up_all(wqh)						\
@@ -255,6 +248,12 @@ static inline void
 __add_wait_queue_tail(wait_queue_head_t *wqh, wait_queue_t *wq)
 {
 	list_add_tail(&wq->task_list, &wqh->task_list);
+}
+
+static inline void
+__add_wait_queue_entry_tail(wait_queue_head_t *wqh, wait_queue_entry_t *wq)
+{
+        list_add_tail(&wq->entry, &wqh->head);
 }
 
 static inline void
