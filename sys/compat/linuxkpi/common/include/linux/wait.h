@@ -59,6 +59,7 @@ struct wait_queue_head;
 typedef struct wait_queue wait_queue_t;
 typedef struct wait_queue_entry wait_queue_entry_t;
 typedef struct wait_queue_head wait_queue_head_t;
+
 typedef int wait_queue_func_t(wait_queue_t *, unsigned int, int, void *);
 
 /*
