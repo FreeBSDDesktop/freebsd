@@ -462,12 +462,6 @@ device_destroy(struct class *class, dev_t devt)
 }
 
 static inline void
-dev_pm_set_driver_flags(struct device *dev, u32 flags)
-{
-	printf("%s: missing implementation\n", __func__);
-}
-
-static inline void
 linux_class_kfree(struct class *class)
 {
 

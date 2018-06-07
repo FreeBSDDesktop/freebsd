@@ -34,10 +34,6 @@
 
 #include <sys/cdefs.h>
 
-#ifndef __LinuxKPI_version
-#define	__LinuxKPI_version 40009
-#endif
-
 #define __user
 #define __kernel
 #define __safe

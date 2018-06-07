@@ -46,7 +46,6 @@ struct ww_acquire_ctx {
 
 struct ww_mutex {
 	struct mutex base;
-	struct ww_acquire_ctx *ctx;
 	struct cv condvar;
 };
 
