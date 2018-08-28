@@ -299,6 +299,10 @@ int linux_wait_on_atomic_t(atomic_t *, unsigned int);
  * callers must be manually modified; a cb that does something other than call
  * schedule() will require special treatment.
  */
+/*
+ * XXX: wait_on_atomic_t is replaced with wait_var_event from 4.17
+ * https://lore.kernel.org/patchwork/patch/933951/
+ */
 #define	wait_on_atomic_t(a, state)	linux_wait_on_atomic_t(a, state)
 
 struct task_struct;

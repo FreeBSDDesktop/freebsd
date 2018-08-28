@@ -52,6 +52,15 @@ get_random_int(void)
 	return (val);
 }
 
+static inline uint32_t
+get_random_u32(void)
+{
+	uint32_t val;
+
+	get_random_bytes(&val, sizeof(val));
+	return (val);
+}
+
 static inline u_long
 get_random_long(void)
 {

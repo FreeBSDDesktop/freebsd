@@ -178,4 +178,18 @@ local_clock(void)
 	return ((uint64_t)ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec);
 }
 
+static inline char *
+get_task_comm(char *buf, struct task_struct *task)
+{
+
+	// XXX: Linux task com len is 16, FreeBSD is 19 - problems?
+	MPASS(buf && strlen(buf) == TASK_COMM_LEN);
+
+	// XXX: locking? 
+	/* task_lock(tsk); */
+	strncpy(buf, task->comm, strlen(buf));
+	/* task_unlock(tsk); */
+	return buf;
+}
+
 #endif	/* _LINUX_SCHED_H_ */
