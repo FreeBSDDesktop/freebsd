@@ -1250,6 +1250,7 @@ linux_file_mmap_single(struct file *fp, vm_ooffset_t *offset,
 			}
 			return (EINVAL);
 		}
+		vmap->vm_ops->open(vmap);
 	} else {
 		struct sglist *sg;
 
