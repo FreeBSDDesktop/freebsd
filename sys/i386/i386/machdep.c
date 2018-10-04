@@ -145,6 +145,9 @@ __FBSDID("$FreeBSD$");
 #ifdef FDT
 #include <x86/fdt.h>
 #endif
+#ifdef DEV_PCI
+#include <dev/pci/pci_early_quirks.h>
+#endif
 
 #ifdef DEV_APIC
 #include <x86/apicvar.h>
@@ -191,21 +194,6 @@ long realmem = 0;
 #ifdef PAE
 FEATURE(pae, "Physical Address Extensions");
 #endif
-
-/*
- * The number of PHYSMAP entries must be one less than the number of
- * PHYSSEG entries because the PHYSMAP entry that spans the largest
- * physical address that is accessible by ISA DMA is split into two
- * PHYSSEG entries.
- */
-#define	PHYSMAP_SIZE	(2 * (VM_PHYSSEG_MAX - 1))
-
-vm_paddr_t phys_avail[PHYSMAP_SIZE + 2];
-vm_paddr_t dump_avail[PHYSMAP_SIZE + 2];
-
-/* must be 2 less so 0 0 can signal end of chunks */
-#define	PHYS_AVAIL_ARRAY_END (nitems(phys_avail) - 2)
-#define	DUMP_AVAIL_ARRAY_END (nitems(dump_avail) - 2)
 
 struct kva_md_info kmi;
 
@@ -2469,6 +2457,11 @@ init386(int first)
 	init_param2(physmem);
 
 	/* now running on new page tables, configured,and u/iom is accessible */
+
+#ifdef DEV_PCI
+        /* This function might manipulate phys_avail. */
+        pci_early_quirks();
+#endif
 
 	if (late_console)
 		cninit();

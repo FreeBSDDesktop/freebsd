@@ -124,6 +124,7 @@ __FBSDID("$FreeBSD$");
 #include <machine/mp_watchdog.h>
 #include <machine/pc/bios.h>
 #include <machine/pcb.h>
+#include <machine/physmem.h>
 #include <machine/proc.h>
 #include <machine/reg.h>
 #include <machine/sigframe.h>
@@ -137,6 +138,9 @@ __FBSDID("$FreeBSD$");
 #endif
 #ifdef FDT
 #include <x86/fdt.h>
+#endif
+#ifdef DEV_PCI
+#include <dev/pci/pci_early_quirks.h>
 #endif
 
 #ifdef DEV_ATPIC
@@ -209,21 +213,6 @@ int cold = 1;
 
 long Maxmem = 0;
 long realmem = 0;
-
-/*
- * The number of PHYSMAP entries must be one less than the number of
- * PHYSSEG entries because the PHYSMAP entry that spans the largest
- * physical address that is accessible by ISA DMA is split into two
- * PHYSSEG entries.
- */
-#define	PHYSMAP_SIZE	(2 * (VM_PHYSSEG_MAX - 1))
-
-vm_paddr_t phys_avail[PHYSMAP_SIZE + 2];
-vm_paddr_t dump_avail[PHYSMAP_SIZE + 2];
-
-/* must be 2 less so 0 0 can signal end of chunks */
-#define	PHYS_AVAIL_ARRAY_END (nitems(phys_avail) - 2)
-#define	DUMP_AVAIL_ARRAY_END (nitems(dump_avail) - 2)
 
 struct kva_md_info kmi;
 
@@ -1790,6 +1779,11 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
 	init_param2(physmem);
 
 	/* now running on new page tables, configured,and u/iom is accessible */
+
+#ifdef DEV_PCI
+        /* This function might manipulate phys_avail. */
+        pci_early_quirks();
+#endif
 
 	if (late_console)
 		cninit();

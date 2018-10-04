@@ -727,4 +727,10 @@ typedef void (*pci_event_fn)(void *arg, device_t dev);
 EVENTHANDLER_DECLARE(pci_add_device, pci_event_fn);
 EVENTHANDLER_DECLARE(pci_delete_device, pci_event_fn);
 
+#if defined(__amd64__)
+extern vm_paddr_t intel_graphics_stolen_base;
+extern vm_paddr_t intel_graphics_stolen_size;
+#define	PCI_EARLY_QUIRKS_INTEL_GRAPHICS_STOLEN 1
+#endif
+
 #endif /* _PCIVAR_H_ */
