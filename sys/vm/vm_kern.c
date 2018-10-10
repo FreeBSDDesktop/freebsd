@@ -122,11 +122,12 @@ SYSCTL_ULONG(_vm, OID_AUTO, max_kernel_address, CTLFLAG_RD,
     "Max kernel address");
 
 #if VM_NRESERVLEVEL > 0
-#define	KVA_QUANTUM	(1 << (VM_LEVEL_0_ORDER + PAGE_SHIFT))
+#define	KVA_QUANTUM_SHIFT	(VM_LEVEL_0_ORDER + PAGE_SHIFT)
 #else
 /* On non-superpage architectures want large import sizes. */
-#define	KVA_QUANTUM	(PAGE_SIZE * 1024)
+#define	KVA_QUANTUM_SHIFT	(10 + PAGE_SHIFT)
 #endif
+#define	KVA_QUANTUM		(1 << KVA_QUANTUM_SHIFT)
 
 /*
  *	kva_alloc:
@@ -416,9 +417,10 @@ kmem_malloc(vm_size_t size, int flags)
 }
 
 /*
- *	kmem_back:
+ *	kmem_back_domain:
  *
- *	Allocate physical pages for the specified virtual address range.
+ *	Allocate physical pages from the specified domain for the specified
+ *	virtual address range.
  */
 int
 kmem_back_domain(int domain, vm_object_t object, vm_offset_t addr,
@@ -479,24 +481,43 @@ retry:
 	return (KERN_SUCCESS);
 }
 
+/*
+ *	kmem_back:
+ *
+ *	Allocate physical pages for the specified virtual address range.
+ */
 int
 kmem_back(vm_object_t object, vm_offset_t addr, vm_size_t size, int flags)
 {
-	struct vm_domainset_iter di;
-	int domain;
-	int ret;
+	vm_offset_t end, next, start;
+	int domain, rv;
 
 	KASSERT(object == kernel_object,
 	    ("kmem_back: only supports kernel object."));
 
-	vm_domainset_iter_malloc_init(&di, kernel_object, &domain, &flags);
-	do {
-		ret = kmem_back_domain(domain, object, addr, size, flags);
-		if (ret == KERN_SUCCESS)
+	for (start = addr, end = addr + size; addr < end; addr = next) {
+		/*
+		 * We must ensure that pages backing a given large virtual page
+		 * all come from the same physical domain.
+		 */
+		if (vm_ndomains > 1) {
+			domain = (addr >> KVA_QUANTUM_SHIFT) % vm_ndomains;
+			while (VM_DOMAIN_EMPTY(domain))
+				domain++;
+			next = roundup2(addr + 1, KVA_QUANTUM);
+			if (next > end || next < start)
+				next = end;
+		} else {
+			domain = 0;
+			next = end;
+		}
+		rv = kmem_back_domain(domain, object, addr, next - addr, flags);
+		if (rv != KERN_SUCCESS) {
+			kmem_unback(object, start, addr - start);
 			break;
-	} while (vm_domainset_iter_malloc(&di, &domain, &flags) == 0);
-
-	return (ret);
+		}
+	}
+	return (rv);
 }
 
 /*
@@ -652,7 +673,7 @@ kmem_init_zero_region(void)
 }
 
 /*
- * Import kva into the kernel arena.
+ * Import KVA from the kernel map into the kernel arena.
  */
 static int
 kva_import(void *unused, vmem_size_t size, int flags, vmem_addr_t *addrp)
@@ -674,22 +695,20 @@ kva_import(void *unused, vmem_size_t size, int flags, vmem_addr_t *addrp)
 	return (0);
 }
 
-#if VM_NRESERVLEVEL > 0
 /*
- * Import a superpage from the normal kernel arena into the special
- * arena for allocations with different permissions.
+ * Import KVA from a parent arena into a per-domain arena.  Imports must be
+ * KVA_QUANTUM-aligned and a multiple of KVA_QUANTUM in size.
  */
 static int
-kernel_rwx_alloc(void *arena, vmem_size_t size, int flags, vmem_addr_t *addrp)
+kva_import_domain(void *arena, vmem_size_t size, int flags, vmem_addr_t *addrp)
 {
 
 	KASSERT((size % KVA_QUANTUM) == 0,
-	    ("kernel_rwx_alloc: Size %jd is not a multiple of %d",
+	    ("kva_import_domain: Size %jd is not a multiple of %d",
 	    (intmax_t)size, (int)KVA_QUANTUM));
 	return (vmem_xalloc(arena, size, KVA_QUANTUM, 0, 0, VMEM_ADDR_MIN,
 	    VMEM_ADDR_MAX, flags, addrp));
 }
-#endif
 
 /*
  * 	kmem_init:
@@ -727,30 +746,30 @@ kmem_init(vm_offset_t start, vm_offset_t end)
 	vmem_init(kernel_arena, "kernel arena", 0, 0, PAGE_SIZE, 0, 0);
 	vmem_set_import(kernel_arena, kva_import, NULL, NULL, KVA_QUANTUM);
 
-#if VM_NRESERVLEVEL > 0
-	/*
-	 * In an architecture with superpages, maintain a separate arena
-	 * for allocations with permissions that differ from the "standard"
-	 * read/write permissions used for memory in the kernel_arena.
-	 */
-	kernel_rwx_arena = vmem_create("kernel rwx arena", 0, 0, PAGE_SIZE,
-	    0, M_WAITOK);
-	vmem_set_import(kernel_rwx_arena, kernel_rwx_alloc,
-	    (vmem_release_t *)vmem_xfree, kernel_arena, KVA_QUANTUM);
-#endif
-
 	for (domain = 0; domain < vm_ndomains; domain++) {
+		/*
+		 * Initialize the per-domain arenas.  These are used to color
+		 * the KVA space in a way that ensures that virtual large pages
+		 * are backed by memory from the same physical domain,
+		 * maximizing the potential for superpage promotion.
+		 */
 		vm_dom[domain].vmd_kernel_arena = vmem_create(
 		    "kernel arena domain", 0, 0, PAGE_SIZE, 0, M_WAITOK);
 		vmem_set_import(vm_dom[domain].vmd_kernel_arena,
-		    (vmem_import_t *)vmem_alloc, NULL, kernel_arena,
-		    KVA_QUANTUM);
+		    kva_import_domain, NULL, kernel_arena, KVA_QUANTUM);
+
+		/*
+		 * In architectures with superpages, maintain separate arenas
+		 * for allocations with permissions that differ from the
+		 * "standard" read/write permissions used for kernel memory,
+		 * so as not to inhibit superpage promotion.
+		 */
 #if VM_NRESERVLEVEL > 0
 		vm_dom[domain].vmd_kernel_rwx_arena = vmem_create(
 		    "kernel rwx arena domain", 0, 0, PAGE_SIZE, 0, M_WAITOK);
 		vmem_set_import(vm_dom[domain].vmd_kernel_rwx_arena,
-		    kernel_rwx_alloc, (vmem_release_t *)vmem_xfree,
-		    vm_dom[domain].vmd_kernel_arena, KVA_QUANTUM);
+		    kva_import_domain, (vmem_release_t *)vmem_xfree,
+		    kernel_arena, KVA_QUANTUM);
 #endif
 	}
 }
