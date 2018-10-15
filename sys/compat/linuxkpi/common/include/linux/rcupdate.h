@@ -39,7 +39,7 @@
 	((__typeof(*(v)) *)(v))
 
 #define	RCU_INIT_POINTER(p, v) do {		\
-	(p) = (v);				\
+	WRITE_ONCE(p, RCU_INITIALIZER(v));	\
 } while (0)
 
 #define	call_rcu(ptr, func) do {		\
