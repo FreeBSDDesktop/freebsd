@@ -35,8 +35,8 @@
 #include <linux/time.h>
 #include <linux/jiffies.h>
 
-#define	ktime_get_ts(x)		getnanouptime(x)
-#define	ktime_get_raw_ts(x)	getnanouptime(x)
+#define	ktime_get_ts(x)		getnanotime(x)
+#define	ktime_get_raw_ts(x)	getnanotime(x)
 
 /* time values in nanoseconds */
 typedef s64 ktime_t;
@@ -247,7 +247,7 @@ ktime_get_raw_ns(void)
 {
 	struct timespec ts;
 
-	nanouptime(&ts);
+	nanotime(&ts);
 	return (ktime_to_ns(timespec_to_ktime(ts)));
 }
 
