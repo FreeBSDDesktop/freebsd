@@ -43,6 +43,7 @@
 MALLOC_DECLARE(M_KMALLOC);
 
 #define	kvmalloc(size)			kmalloc(size, 0)
+#define	kvzalloc(size, flags)		kmalloc(size, (flags) | __GFP_ZERO)
 #define	kzalloc(size, flags)		kmalloc(size, (flags) | __GFP_ZERO)
 #define	kzalloc_node(size, flags, node)	kmalloc(size, (flags) | __GFP_ZERO)
 #define	kfree_const(ptr)		kfree(ptr)

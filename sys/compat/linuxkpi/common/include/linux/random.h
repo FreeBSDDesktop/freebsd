@@ -43,6 +43,15 @@ get_random_bytes(void *buf, int nbytes)
 		arc4rand(buf, nbytes, 0);
 }
 
+static inline uint32_t
+get_random_u32(void)
+{
+	uint32_t val;
+
+	get_random_bytes(&val, sizeof(val));
+	return (val);
+}
+
 static inline u_int
 get_random_int(void)
 {

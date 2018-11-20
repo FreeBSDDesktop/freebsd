@@ -37,6 +37,7 @@
 #include <sys/bus.h>
 #include <sys/interrupt.h>
 
-#define	synchronize_irq(irq)	_intr_drain((irq))
+#define	synchronize_irq(irq)		_intr_drain((irq))
+#define	synchronize_hardirq(irq)	_intr_drain((irq))
 
 #endif	/* _LINUX_HARDIRQ_H_ */
