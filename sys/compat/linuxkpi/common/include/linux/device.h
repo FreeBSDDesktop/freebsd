@@ -183,6 +183,12 @@ show_class_attr_string(struct class *class,
 #define	dev_printk(lvl, dev, fmt, ...)					\
 	    device_printf((dev)->bsddev, fmt, ##__VA_ARGS__)
 
+#define	dev_err_once(dev, ...) do {		\
+	static linux_ratelimit_t __ratelimited;	\
+	if (linux_ratelimited(&__ratelimited))	\
+		dev_err(dev, __VA_ARGS__);	\
+} while (0)
+
 #define	dev_err_ratelimited(dev, ...) do {	\
 	static linux_ratelimit_t __ratelimited;	\
 	if (linux_ratelimited(&__ratelimited))	\
