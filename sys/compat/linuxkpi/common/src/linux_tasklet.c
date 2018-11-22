@@ -52,6 +52,9 @@ __FBSDID("$FreeBSD$");
 #define	TASKLET_ST_GET(ts) \
 	READ_ONCE(*(volatile uintptr_t *)&(ts)->entry.tqe_prev)
 
+#define	TASKLET_ST_TESTANDSET(ts, new) \
+	atomic_testandset_long((volatile uintptr_t *)&(ts)->entry.tqe_prev, new)
+
 struct tasklet_worker {
 	struct mtx mtx;
 	TAILQ_HEAD(, tasklet_struct) head;
@@ -214,4 +217,16 @@ tasklet_disable(struct tasklet_struct *ts)
 			break;
 		pause("W", 1);
 	}
+}
+
+int tasklet_trylock(struct tasklet_struct *ts)
+{
+
+	return (!TASKLET_ST_TESTANDSET(ts, TASKLET_ST_BUSY));
+}
+
+void tasklet_unlock(struct tasklet_struct *ts)
+{
+
+	TASKLET_ST_SET(ts, TASKLET_ST_IDLE);
 }
