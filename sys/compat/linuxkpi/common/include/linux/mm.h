@@ -92,6 +92,7 @@ CTASSERT((VM_PROT_ALL & -(1 << 8)) == 0);
 #define	FAULT_FLAG_INSTRUCTION	(1 << 8)
 
 typedef int (*pte_fn_t)(linux_pte_t *, pgtable_t, unsigned long addr, void *data);
+typedef int vm_fault_t;
 
 struct vm_area_struct {
 	vm_offset_t vm_start;
