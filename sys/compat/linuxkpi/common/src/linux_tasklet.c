@@ -204,12 +204,21 @@ tasklet_kill(struct tasklet_struct *ts)
 void
 tasklet_enable(struct tasklet_struct *ts)
 {
+
 	(void) TASKLET_ST_CMPSET(ts, TASKLET_ST_PAUSED, TASKLET_ST_IDLE);
+}
+
+bool
+tasklet_is_enabled(struct tasklet_struct *ts)
+{
+
+	return (TASKLET_ST_GET(ts) != TASKLET_ST_PAUSED);
 }
 
 void
 tasklet_disable(struct tasklet_struct *ts)
 {
+
 	while (1) {
 		if (TASKLET_ST_GET(ts) == TASKLET_ST_PAUSED) 
 			break;

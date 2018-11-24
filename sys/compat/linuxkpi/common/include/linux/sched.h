@@ -96,6 +96,7 @@ struct task_struct {
 #define	put_pid(x)		do { } while (0)
 #define	current_euid()	(curthread->td_ucred->cr_uid)
 
+#define	get_task_state(task)		atomic_read(&(task)->state)
 #define	set_task_state(task, x)		atomic_set(&(task)->state, (x))
 #define	__set_task_state(task, x)	((task)->state.counter = (x))
 #define	set_current_state(x)		set_task_state(current, x)
