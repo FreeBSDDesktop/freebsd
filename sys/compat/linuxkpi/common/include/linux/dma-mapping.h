@@ -165,13 +165,21 @@ dma_map_single_attrs(struct device *dev, void *ptr, size_t size,
     enum dma_data_direction dir, struct dma_attrs *attrs)
 {
 
-	return vtophys(ptr);
+	return (vtophys(ptr));
 }
 
 static inline void
 dma_unmap_single_attrs(struct device *dev, dma_addr_t addr, size_t size,
     enum dma_data_direction dir, struct dma_attrs *attrs)
 {
+}
+
+static inline dma_addr_t
+dma_map_page_attrs(struct device *dev, struct page *page, size_t offset,
+    size_t size, enum dma_data_direction dir, unsigned long attrs)
+{
+
+	return (VM_PAGE_TO_PHYS(page) + offset);
 }
 
 static inline int
@@ -198,7 +206,7 @@ dma_map_page(struct device *dev, struct page *page,
     unsigned long offset, size_t size, enum dma_data_direction direction)
 {
 
-	return VM_PAGE_TO_PHYS(page) + offset;
+	return (VM_PAGE_TO_PHYS(page) + offset);
 }
 
 static inline void
@@ -217,6 +225,7 @@ static inline void
 dma_sync_single(struct device *dev, dma_addr_t addr, size_t size,
     enum dma_data_direction dir)
 {
+
 	dma_sync_single_for_cpu(dev, addr, size, dir);
 }
 
