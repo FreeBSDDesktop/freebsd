@@ -34,6 +34,16 @@
 #define	in_interrupt() \
 	(curthread->td_intr_nesting_level || curthread->td_critnest)
 
+/*
+ * XXX: Temporary placeholder until we can confirm correct solution.
+ * Fix and remove comment before commit to HEAD.
+ * Linux does this:
+ * #define in_task()  (!(preempt_count() & \
+ *                    (NMI_MASK | HARDIRQ_MASK | SOFTIRQ_OFFSET)))
+ */
+#define	in_task() \
+	(curthread->td_intr_nesting_level == 0 && curthread->td_critnest == 0)
+
 #define	preempt_disable()	critical_enter()
 #define	preempt_enable()	critical_exit()
 
