@@ -868,7 +868,7 @@ pcie_get_speed_cap(struct pci_dev *dev)
 	int error, pos;
 
 	root = device_get_parent(device_get_parent(
-	    device_get_parent(&dev->dev)));
+	    device_get_parent(dev->dev.bsddev)));
 
 	/* we've been informed via and serverworks don't make the cut */
 	if (pci_get_vendor(root) == PCI_VENDOR_ID_VIA ||
