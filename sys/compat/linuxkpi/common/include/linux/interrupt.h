@@ -206,5 +206,6 @@ extern bool tasklet_is_enabled(struct tasklet_struct *);
 extern void tasklet_disable(struct tasklet_struct *);
 extern int tasklet_trylock(struct tasklet_struct *);
 extern void tasklet_unlock(struct tasklet_struct *);
+extern void tasklet_unlock_wait(struct tasklet_struct *ts);
 
 #endif	/* _LINUX_INTERRUPT_H_ */

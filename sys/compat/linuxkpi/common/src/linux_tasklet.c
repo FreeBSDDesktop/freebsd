@@ -228,14 +228,27 @@ tasklet_disable(struct tasklet_struct *ts)
 	}
 }
 
-int tasklet_trylock(struct tasklet_struct *ts)
+int
+tasklet_trylock(struct tasklet_struct *ts)
 {
 
 	return (!TASKLET_ST_TESTANDSET(ts, TASKLET_ST_BUSY));
 }
 
-void tasklet_unlock(struct tasklet_struct *ts)
+void
+tasklet_unlock(struct tasklet_struct *ts)
 {
 
 	TASKLET_ST_SET(ts, TASKLET_ST_IDLE);
+}
+
+void
+tasklet_unlock_wait(struct tasklet_struct *ts)
+{
+
+	WITNESS_WARN(WARN_GIANTOK | WARN_SLEEPOK, NULL, "tasklet_kill() can sleep");
+
+	/* wait until tasklet is no longer busy */
+	while (TASKLET_ST_GET(ts) != TASKLET_ST_IDLE)
+		pause("W", 1);
 }
