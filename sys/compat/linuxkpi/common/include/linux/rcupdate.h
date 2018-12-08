@@ -100,4 +100,41 @@ extern void linux_rcu_read_lock(void);
 extern void linux_rcu_read_unlock(void);
 extern void linux_synchronize_rcu(void);
 
+
+static inline void
+cond_synchronize_rcu(unsigned long oldstate)
+{
+	/* FIXME and remove these comments */
+	/**
+	 * cond_synchronize_rcu - Conditionally wait for an RCU grace period
+	 *
+	 * @oldstate: return value from earlier call to get_state_synchronize_rcu()
+	 *
+	 * If a full RCU grace period has elapsed since the earlier call to
+	 * get_state_synchronize_rcu(), just return.  Otherwise, invoke
+	 * synchronize_rcu() to wait for a full grace period.
+	 *
+	 * Yes, this function does not take counter wrap into account.  But
+	 * counter wrap is harmless.  If the counter wraps, we have waited for
+	 * more than 2 billion grace periods (and way more on a 64-bit system!),
+	 * so waiting for one additional grace period should be just fine.
+	 */
+	linux_synchronize_rcu();
+}
+
+static inline unsigned long
+get_state_synchronize_rcu(void)
+{
+
+	/* FIXME and remove these comments */
+	/**
+	 * get_state_synchronize_rcu - Snapshot current RCU state
+	 *
+	 * Returns a cookie that is used by a later call to cond_synchronize_rcu()
+	 * to determine whether or not a full grace period has elapsed in the
+	 * meantime.
+	 */
+	return (0);
+}
+
 #endif					/* _LINUX_RCUPDATE_H_ */
