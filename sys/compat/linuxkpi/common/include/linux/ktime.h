@@ -94,6 +94,13 @@ ktime_add_ms(ktime_t kt, int64_t ms)
 }
 
 static inline ktime_t
+ktime_add_us(ktime_t kt, int64_t us)
+{
+
+	return (ktime_add_ns(kt, us * NSEC_PER_USEC));
+}
+
+static inline ktime_t
 ktime_sub_ns(ktime_t kt, int64_t ns)
 {
 	return (kt - ns);
