@@ -134,4 +134,11 @@ ida_alloc_max(struct ida *ida, unsigned int max, gfp_t gfp)
 	return (ida_simple_get(ida, 0, max, gfp));
 }
 
+static inline bool
+ida_is_empty(struct ida *ida)
+{
+
+	return (idr_is_empty(&ida->idr));
+}
+
 #endif	/* _LINUX_IDR_H_ */

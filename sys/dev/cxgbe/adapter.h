@@ -174,6 +174,7 @@ enum {
 	DF_DUMP_MBOX		= (1 << 0),	/* Log all mbox cmd/rpl. */
 	DF_LOAD_FW_ANYTIME	= (1 << 1),	/* Allow LOAD_FW after init */
 	DF_DISABLE_TCB_CACHE	= (1 << 2),	/* Disable TCB cache (T6+) */
+	DF_DISABLE_CFG_RETRY	= (1 << 3),	/* Disable fallback config */
 };
 
 #define IS_DOOMED(vi)	((vi)->flags & DOOMED)
@@ -771,6 +772,8 @@ struct devnames {
 	const char *vf_ifnet_name;
 };
 
+struct clip_entry;
+
 struct adapter {
 	SLIST_ENTRY(adapter) link;
 	device_t dev;
@@ -816,6 +819,10 @@ struct adapter {
 	struct taskqueue *tq[MAX_NCHAN];	/* General purpose taskqueues */
 	struct port_info *port[MAX_NPORTS];
 	uint8_t chan_map[MAX_NCHAN];		/* channel -> port */
+
+	struct mtx clip_table_lock;
+	TAILQ_HEAD(, clip_entry) clip_table;
+	int clip_gen;
 
 	void *tom_softc;	/* (struct tom_data *) */
 	struct tom_tunables tt;

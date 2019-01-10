@@ -391,8 +391,8 @@ vmspace_exit(struct thread *td)
 	p = td->td_proc;
 	vm = p->p_vmspace;
 	atomic_add_int(&vmspace0.vm_refcnt, 1);
+	refcnt = vm->vm_refcnt;
 	do {
-		refcnt = vm->vm_refcnt;
 		if (refcnt > 1 && p->p_vmspace != &vmspace0) {
 			/* Switch now since other proc might free vmspace */
 			PROC_VMSPACE_LOCK(p);
@@ -400,7 +400,7 @@ vmspace_exit(struct thread *td)
 			PROC_VMSPACE_UNLOCK(p);
 			pmap_activate(td);
 		}
-	} while (!atomic_cmpset_int(&vm->vm_refcnt, refcnt, refcnt - 1));
+	} while (!atomic_fcmpset_int(&vm->vm_refcnt, &refcnt, refcnt - 1));
 	if (refcnt == 1) {
 		if (p->p_vmspace != vm) {
 			/* vmspace not yet freed, switch back */
@@ -437,13 +437,13 @@ vmspace_acquire_ref(struct proc *p)
 		PROC_VMSPACE_UNLOCK(p);
 		return (NULL);
 	}
+	refcnt = vm->vm_refcnt;
 	do {
-		refcnt = vm->vm_refcnt;
 		if (refcnt <= 0) { 	/* Avoid 0->1 transition */
 			PROC_VMSPACE_UNLOCK(p);
 			return (NULL);
 		}
-	} while (!atomic_cmpset_int(&vm->vm_refcnt, refcnt, refcnt + 1));
+	} while (!atomic_fcmpset_int(&vm->vm_refcnt, &refcnt, refcnt + 1));
 	if (vm != p->p_vmspace) {
 		PROC_VMSPACE_UNLOCK(p);
 		vmspace_free(vm);
@@ -4213,7 +4213,7 @@ RetryLookupLocked:
 	 * Return the object/offset from this entry.  If the entry was
 	 * copy-on-write or empty, it has been fixed up.
 	 */
-	*pindex = UOFF_TO_IDX((vaddr - entry->start) + entry->offset);
+	*pindex = OFF_TO_IDX((vaddr - entry->start) + entry->offset);
 	*object = entry->object.vm_object;
 
 	*out_prot = prot;
@@ -4294,7 +4294,7 @@ vm_map_lookup_locked(vm_map_t *var_map,		/* IN/OUT */
 	 * Return the object/offset from this entry.  If the entry was
 	 * copy-on-write or empty, it has been fixed up.
 	 */
-	*pindex = UOFF_TO_IDX((vaddr - entry->start) + entry->offset);
+	*pindex = OFF_TO_IDX((vaddr - entry->start) + entry->offset);
 	*object = entry->object.vm_object;
 
 	*out_prot = prot;
