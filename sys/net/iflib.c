@@ -1921,27 +1921,27 @@ _rxq_refill_cb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
 static void
 _iflib_fl_refill(if_ctx_t ctx, iflib_fl_t fl, int count)
 {
-	struct mbuf *m;
-	int idx, frag_idx = fl->ifl_fragidx;
-        int pidx = fl->ifl_pidx;
-	caddr_t cl, *sd_cl;
-	struct mbuf **sd_m;
 	struct if_rxd_update iru;
 	struct rxq_refill_cb_arg cb_arg;
+	struct mbuf *m;
+	caddr_t cl, *sd_cl;
+	struct mbuf **sd_m;
 	bus_dmamap_t *sd_map;
-	int n, i = 0;
 	bus_addr_t bus_addr, *sd_ba;
-	int err;
+	int err, frag_idx, i, idx, n, pidx;
 	qidx_t credits;
 
 	sd_m = fl->ifl_sds.ifsd_m;
 	sd_map = fl->ifl_sds.ifsd_map;
 	sd_cl = fl->ifl_sds.ifsd_cl;
 	sd_ba = fl->ifl_sds.ifsd_ba;
+	pidx = fl->ifl_pidx;
 	idx = pidx;
+	frag_idx = fl->ifl_fragidx;
 	credits = fl->ifl_credits;
 
-	n  = count;
+	i = 0;
+	n = count;
 	MPASS(n > 0);
 	MPASS(credits + n <= fl->ifl_size);
 
@@ -1963,9 +1963,11 @@ _iflib_fl_refill(if_ctx_t ctx, iflib_fl_t fl, int count)
 		 *
 		 * If the cluster is still set then we know a minimum sized packet was received
 		 */
-		bit_ffc_at(fl->ifl_rx_bitmap, frag_idx, fl->ifl_size,  &frag_idx);
-		if ((frag_idx < 0) || (frag_idx >= fl->ifl_size))
-                	bit_ffc(fl->ifl_rx_bitmap, fl->ifl_size, &frag_idx);
+		bit_ffc_at(fl->ifl_rx_bitmap, frag_idx, fl->ifl_size,
+		    &frag_idx);
+		if (frag_idx < 0)
+			bit_ffc(fl->ifl_rx_bitmap, fl->ifl_size, &frag_idx);
+		MPASS(frag_idx >= 0);
 		if ((cl = sd_cl[frag_idx]) == NULL) {
 			if ((cl = m_cljget(NULL, M_NOWAIT, fl->ifl_buf_size)) == NULL)
 				break;
@@ -1995,12 +1997,12 @@ _iflib_fl_refill(if_ctx_t ctx, iflib_fl_t fl, int count)
 			bus_addr = sd_ba[frag_idx];
 		}
 
-		bit_set(fl->ifl_rx_bitmap, frag_idx);
 		MPASS(sd_m[frag_idx] == NULL);
 		if ((m = m_gethdr(M_NOWAIT, MT_NOINIT)) == NULL) {
 			break;
 		}
 		sd_m[frag_idx] = m;
+		bit_set(fl->ifl_rx_bitmap, frag_idx);
 #if MEMORY_LOGGING
 		fl->ifl_m_enqueued++;
 #endif
@@ -2025,7 +2027,6 @@ _iflib_fl_refill(if_ctx_t ctx, iflib_fl_t fl, int count)
 			fl->ifl_pidx = idx;
 			fl->ifl_credits = credits;
 		}
-
 	}
 
 	if (i) {
@@ -2197,17 +2198,17 @@ iflib_rx_sds_free(iflib_rxq_t rxq)
 			fl = &rxq->ifr_fl[i];
 			if (fl->ifl_desc_tag != NULL) {
 				if (fl->ifl_sds.ifsd_map != NULL) {
-					for (j = 0; j < fl->ifl_size; i++) {
-						if (fl->ifl_sds.ifsd_map[i] ==
+					for (j = 0; j < fl->ifl_size; j++) {
+						if (fl->ifl_sds.ifsd_map[j] ==
 						    NULL)
-						continue;
+							continue;
 						bus_dmamap_sync(
 						    fl->ifl_desc_tag,
-						    fl->ifl_sds.ifsd_map[i],
+						    fl->ifl_sds.ifsd_map[j],
 						    BUS_DMASYNC_POSTREAD);
 						bus_dmamap_unload(
 						    fl->ifl_desc_tag,
-						    fl->ifl_sds.ifsd_map[i]);
+						    fl->ifl_sds.ifsd_map[j]);
 					}
 				}
 				bus_dma_tag_destroy(fl->ifl_desc_tag);
@@ -4408,8 +4409,8 @@ iflib_device_register(device_t dev, void *sc, if_shared_ctx_t sctx, if_ctx_t *ct
 	main_rxq = (sctx->isc_flags & IFLIB_HAS_RXCQ) ? 1 : 0;
 
 	/* XXX change for per-queue sizes */
-	device_printf(dev, "using %d tx descriptors and %d rx descriptors\n",
-		      scctx->isc_ntxd[main_txq], scctx->isc_nrxd[main_rxq]);
+	device_printf(dev, "Using %d tx descriptors and %d rx descriptors\n",
+	    scctx->isc_ntxd[main_txq], scctx->isc_nrxd[main_rxq]);
 	for (i = 0; i < sctx->isc_nrxqs; i++) {
 		if (!powerof2(scctx->isc_nrxd[i])) {
 			/* round down instead? */
@@ -4471,9 +4472,8 @@ iflib_device_register(device_t dev, void *sc, if_shared_ctx_t sctx, if_ctx_t *ct
 	MPASS(CPU_COUNT(&ctx->ifc_cpus) > 0);
 
 	/*
-	** Now setup MSI or MSI/X, should
-	** return us the number of supported
-	** vectors. (Will be 1 for MSI)
+	** Now set up MSI or MSI-X, should return us the number of supported
+	** vectors (will be 1 for a legacy interrupt and MSI).
 	*/
 	if (sctx->isc_flags & IFLIB_SKIP_MSIX) {
 		msix = scctx->isc_vectors;
@@ -4670,8 +4670,8 @@ iflib_pseudo_register(device_t dev, if_shared_ctx_t sctx, if_ctx_t *ctxp,
 	main_rxq = (sctx->isc_flags & IFLIB_HAS_RXCQ) ? 1 : 0;
 
 	/* XXX change for per-queue sizes */
-	device_printf(dev, "using %d tx descriptors and %d rx descriptors\n",
-		      scctx->isc_ntxd[main_txq], scctx->isc_nrxd[main_rxq]);
+	device_printf(dev, "Using %d tx descriptors and %d rx descriptors\n",
+	    scctx->isc_ntxd[main_txq], scctx->isc_nrxd[main_rxq]);
 	for (i = 0; i < sctx->isc_nrxqs; i++) {
 		if (!powerof2(scctx->isc_nrxd[i])) {
 			/* round down instead? */
@@ -4896,7 +4896,6 @@ iflib_device_deregister(if_ctx_t ctx)
 
 		for (j = 0, fl = rxq->ifr_fl; j < rxq->ifr_nfl; j++, fl++)
 			free(fl->ifl_rx_bitmap, M_IFLIB);
-			
 	}
 	tqg = qgroup_if_config_tqg;
 	if (ctx->ifc_admin_task.gt_uniq != NULL)
@@ -4928,15 +4927,15 @@ static void
 iflib_free_intr_mem(if_ctx_t ctx)
 {
 
-	if (ctx->ifc_softc_ctx.isc_intr != IFLIB_INTR_LEGACY) {
-		pci_release_msi(ctx->ifc_dev);
-	}
 	if (ctx->ifc_softc_ctx.isc_intr != IFLIB_INTR_MSIX) {
 		iflib_irq_free(ctx, &ctx->ifc_legacy_irq);
 	}
+	if (ctx->ifc_softc_ctx.isc_intr != IFLIB_INTR_LEGACY) {
+		pci_release_msi(ctx->ifc_dev);
+	}
 	if (ctx->ifc_msix_mem != NULL) {
 		bus_release_resource(ctx->ifc_dev, SYS_RES_MEMORY,
-			ctx->ifc_softc_ctx.isc_msix_bar, ctx->ifc_msix_mem);
+		    rman_get_rid(ctx->ifc_msix_mem), ctx->ifc_msix_mem);
 		ctx->ifc_msix_mem = NULL;
 	}
 }
@@ -5304,7 +5303,8 @@ iflib_queues_alloc(if_ctx_t ctx)
 		}
 
 		for (j = 0, fl = rxq->ifr_fl; j < rxq->ifr_nfl; j++, fl++) 
-			fl->ifl_rx_bitmap = bit_alloc(fl->ifl_size, M_IFLIB, M_WAITOK|M_ZERO);
+			fl->ifl_rx_bitmap = bit_alloc(fl->ifl_size, M_IFLIB,
+			    M_WAITOK);
 	}
 
 	/* TXQs */
@@ -5762,11 +5762,13 @@ iflib_softirq_alloc_generic(if_ctx_t ctx, if_irq_t irq, iflib_intr_type_t type, 
 void
 iflib_irq_free(if_ctx_t ctx, if_irq_t irq)
 {
+
 	if (irq->ii_tag)
 		bus_teardown_intr(ctx->ifc_dev, irq->ii_res, irq->ii_tag);
 
 	if (irq->ii_res)
-		bus_release_resource(ctx->ifc_dev, SYS_RES_IRQ, irq->ii_rid, irq->ii_res);
+		bus_release_resource(ctx->ifc_dev, SYS_RES_IRQ,
+		    rman_get_rid(irq->ii_res), irq->ii_res);
 }
 
 static int
@@ -5960,7 +5962,9 @@ iflib_msix_init(if_ctx_t ctx)
 	iflib_num_tx_queues = ctx->ifc_sysctl_ntxqs;
 	iflib_num_rx_queues = ctx->ifc_sysctl_nrxqs;
 
-	device_printf(dev, "msix_init qsets capped at %d\n", imax(scctx->isc_ntxqsets, scctx->isc_nrxqsets));
+	if (bootverbose)
+		device_printf(dev, "msix_init qsets capped at %d\n",
+		    imax(scctx->isc_ntxqsets, scctx->isc_nrxqsets));
 
 	bar = ctx->ifc_softc_ctx.isc_msix_bar;
 	admincnt = sctx->isc_admin_intrcnt;
@@ -5968,29 +5972,26 @@ iflib_msix_init(if_ctx_t ctx)
 	if (scctx->isc_disable_msix)
 		goto msi;
 
+	/* First try MSI-X */
+	if ((msgs = pci_msix_count(dev)) == 0) {
+		if (bootverbose)
+			device_printf(dev, "MSI-X not supported or disabled\n");
+		goto msi;
+	}
 	/*
 	 * bar == -1 => "trust me I know what I'm doing"
 	 * Some drivers are for hardware that is so shoddily
 	 * documented that no one knows which bars are which
 	 * so the developer has to map all bars. This hack
-	 * allows shoddy garbage to use msix in this framework.
+	 * allows shoddy garbage to use MSI-X in this framework.
 	 */
 	if (bar != -1) {
 		ctx->ifc_msix_mem = bus_alloc_resource_any(dev,
 	            SYS_RES_MEMORY, &bar, RF_ACTIVE);
 		if (ctx->ifc_msix_mem == NULL) {
-			/* May not be enabled */
-			device_printf(dev, "Unable to map MSIX table \n");
+			device_printf(dev, "Unable to map MSI-X table\n");
 			goto msi;
 		}
-	}
-	/* First try MSI/X */
-	if ((msgs = pci_msix_count(dev)) == 0) { /* system has msix disabled */
-		device_printf(dev, "System has MSIX disabled \n");
-		bus_release_resource(dev, SYS_RES_MEMORY,
-		    bar, ctx->ifc_msix_mem);
-		ctx->ifc_msix_mem = NULL;
-		goto msi;
 	}
 #if IFLIB_DEBUG
 	/* use only 1 qset in debug mode */
@@ -6004,8 +6005,10 @@ iflib_msix_init(if_ctx_t ctx)
 	queues = queuemsgs;
 #endif
 	queues = imin(CPU_COUNT(&ctx->ifc_cpus), queues);
-	device_printf(dev, "pxm cpus: %d queue msgs: %d admincnt: %d\n",
-				  CPU_COUNT(&ctx->ifc_cpus), queuemsgs, admincnt);
+	if (bootverbose)
+		device_printf(dev,
+		    "intr CPUs: %d queue msgs: %d admincnt: %d\n",
+		    CPU_COUNT(&ctx->ifc_cpus), queuemsgs, admincnt);
 #ifdef  RSS
 	/* If we're doing RSS, clamp at the number of RSS buckets */
 	if (queues > rss_getnumbuckets())
@@ -6041,11 +6044,13 @@ iflib_msix_init(if_ctx_t ctx)
 		rx_queues = min(rx_queues, tx_queues);
 	}
 
-	device_printf(dev, "using %d rx queues %d tx queues \n", rx_queues, tx_queues);
+	device_printf(dev, "Using %d rx queues %d tx queues\n",
+	    rx_queues, tx_queues);
 
 	vectors = rx_queues + admincnt;
 	if ((err = pci_alloc_msix(dev, &vectors)) == 0) {
-		device_printf(dev, "Using MSIX interrupts with %d vectors\n", vectors);
+		device_printf(dev, "Using MSI-X interrupts with %d vectors\n",
+		    vectors);
 		scctx->isc_vectors = vectors;
 		scctx->isc_nrxqsets = rx_queues;
 		scctx->isc_ntxqsets = tx_queues;
@@ -6054,7 +6059,8 @@ iflib_msix_init(if_ctx_t ctx)
 		return (vectors);
 	} else {
 		device_printf(dev,
-		    "failed to allocate %d msix vectors, err: %d - using MSI\n", vectors, err);
+		    "failed to allocate %d MSI-X vectors, err: %d - using MSI\n",
+		    vectors, err);
 		bus_release_resource(dev, SYS_RES_MEMORY, bar,
 		    ctx->ifc_msix_mem);
 		ctx->ifc_msix_mem = NULL;
@@ -6190,7 +6196,7 @@ iflib_add_device_sysctl_pre(if_ctx_t ctx)
                        "permit #txq != #rxq");
 	SYSCTL_ADD_INT(ctx_list, oid_list, OID_AUTO, "disable_msix",
                       CTLFLAG_RWTUN, &ctx->ifc_softc_ctx.isc_disable_msix, 0,
-                      "disable MSIX (default 0)");
+                      "disable MSI-X (default 0)");
 	SYSCTL_ADD_U16(ctx_list, oid_list, OID_AUTO, "rx_budget",
 		       CTLFLAG_RWTUN, &ctx->ifc_sysctl_rx_budget, 0,
                        "set the rx budget");
