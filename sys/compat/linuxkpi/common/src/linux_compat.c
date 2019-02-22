@@ -101,7 +101,6 @@ MALLOC_DEFINE(M_KMALLOC, "linux", "Linux kmalloc compat");
 #undef cdev
 #define	RB_ROOT(head)	(head)->rbh_root
 
-static void linux_cdev_deref(struct linux_cdev *ldev);
 static struct vm_area_struct *linux_cdev_handle_find(void *handle);
 
 struct kobject linux_class_root;
@@ -2073,7 +2072,7 @@ linux_completion_done(struct completion *c)
 	return (isdone);
 }
 
-static void
+void
 linux_cdev_deref(struct linux_cdev *ldev)
 {
 
