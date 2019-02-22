@@ -100,6 +100,11 @@ extern void linux_rcu_read_lock(void);
 extern void linux_rcu_read_unlock(void);
 extern void linux_synchronize_rcu(void);
 
+/* Empty implementation for !DEBUG */
+#define	init_rcu_head(...)
+#define	destroy_rcu_head(...)
+#define	init_rcu_head_on_stack(...)
+#define	destroy_rcu_head_on_stack(...)
 
 static inline void
 cond_synchronize_rcu(unsigned long oldstate)
