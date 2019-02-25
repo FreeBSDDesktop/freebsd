@@ -189,11 +189,13 @@ typedef void tasklet_func_t(unsigned long);
 struct tasklet_struct {
 	TAILQ_ENTRY(tasklet_struct) entry;
 	tasklet_func_t *func;
+	volatile u_int _state; /* Our impl differ, avoid same name as Linux */
+	atomic_t count;
 	unsigned long data;
 };
 
 #define	DECLARE_TASKLET(name, func, data)	\
-struct tasklet_struct name = { { NULL, NULL }, func, data }
+struct tasklet_struct name = { { NULL, NULL }, func, ATOMIC_INIT(0), data }
 
 #define	tasklet_hi_schedule(t)	tasklet_schedule(t)
 

@@ -41,19 +41,18 @@ __FBSDID("$FreeBSD$");
 #define	TASKLET_ST_BUSY 1
 #define	TASKLET_ST_EXEC 2
 #define	TASKLET_ST_LOOP 3
-#define	TASKLET_ST_PAUSED 4
 
 #define	TASKLET_ST_CMPSET(ts, old, new)	\
-	atomic_cmpset_ptr((volatile uintptr_t *)&(ts)->entry.tqe_prev, old, new)
+	atomic_cmpset_int((volatile u_int *)&(ts)->_state, old, new)
 
 #define	TASKLET_ST_SET(ts, new)	\
-	WRITE_ONCE(*(volatile uintptr_t *)&(ts)->entry.tqe_prev, new)
+	WRITE_ONCE(*(volatile u_int *)&(ts)->_state, new)
 
 #define	TASKLET_ST_GET(ts) \
-	READ_ONCE(*(volatile uintptr_t *)&(ts)->entry.tqe_prev)
+	READ_ONCE(*(volatile u_int *)&(ts)->_state)
 
 #define	TASKLET_ST_TESTANDSET(ts, new) \
-	atomic_testandset_long((volatile uintptr_t *)&(ts)->entry.tqe_prev, new)
+	atomic_testandset_int((volatile u_int *)&(ts)->_state, new)
 
 struct tasklet_worker {
 	struct mtx mtx;
@@ -70,26 +69,34 @@ static void
 tasklet_handler(void *arg)
 {
 	struct tasklet_worker *tw = (struct tasklet_worker *)arg;
-	struct tasklet_struct *ts;
+	struct tasklet_struct *ts, *first;
 
 	linux_set_current(curthread);
 
 	TASKLET_WORKER_LOCK(tw);
+	first = TAILQ_FIRST(&tw->head);
 	while (1) {
 		ts = TAILQ_FIRST(&tw->head);
 		if (ts == NULL)
 			break;
 		TAILQ_REMOVE(&tw->head, ts, entry);
 
-		TASKLET_WORKER_UNLOCK(tw);
-		do {
-			/* reset executing state */
-			TASKLET_ST_SET(ts, TASKLET_ST_EXEC);
+		if (!atomic_read(&ts->count)) {
+			TASKLET_WORKER_UNLOCK(tw);
+			do {
+				/* reset executing state */
+				TASKLET_ST_SET(ts, TASKLET_ST_EXEC);
 
-			ts->func(ts->data);
+				ts->func(ts->data);
 
-		} while (TASKLET_ST_CMPSET(ts, TASKLET_ST_EXEC, TASKLET_ST_IDLE) == 0);
-		TASKLET_WORKER_LOCK(tw);
+			} while (TASKLET_ST_CMPSET(ts, TASKLET_ST_EXEC,
+			        TASKLET_ST_IDLE) == 0);
+			TASKLET_WORKER_LOCK(tw);
+		} else {
+			TAILQ_INSERT_TAIL(&tw->head, ts, entry);
+		}
+		if (TAILQ_FIRST(&tw->head) == first)
+			break;
 	}
 	TASKLET_WORKER_UNLOCK(tw);
 }
@@ -143,6 +150,8 @@ tasklet_init(struct tasklet_struct *ts,
 	ts->entry.tqe_next = NULL;
 	ts->func = func;
 	ts->data = data;
+	ts->_state = TASKLET_ST_IDLE;
+	atomic_set(&ts->count, 0);
 }
 
 void
@@ -160,6 +169,10 @@ local_bh_disable(void)
 void
 tasklet_schedule(struct tasklet_struct *ts)
 {
+
+	/* tasklet is paused */
+	if (atomic_read(&ts->count))
+		return;
 
 	if (TASKLET_ST_CMPSET(ts, TASKLET_ST_EXEC, TASKLET_ST_LOOP)) {
 		/* tasklet_handler() will loop */
@@ -205,27 +218,25 @@ void
 tasklet_enable(struct tasklet_struct *ts)
 {
 
-	(void) TASKLET_ST_CMPSET(ts, TASKLET_ST_PAUSED, TASKLET_ST_IDLE);
+	barrier();
+	atomic_dec(&ts->count);
 }
 
 bool
 tasklet_is_enabled(struct tasklet_struct *ts)
 {
 
-	return (TASKLET_ST_GET(ts) != TASKLET_ST_PAUSED);
+	return !atomic_read(&ts->count);
 }
 
 void
 tasklet_disable(struct tasklet_struct *ts)
 {
 
-	while (1) {
-		if (TASKLET_ST_GET(ts) == TASKLET_ST_PAUSED) 
-			break;
-		if (TASKLET_ST_CMPSET(ts, TASKLET_ST_IDLE, TASKLET_ST_PAUSED))
-			break;
-		pause("W", 1);
-	}
+	atomic_inc(&ts->count);
+	barrier();
+	tasklet_unlock_wait(ts);
+	mb();
 }
 
 int
