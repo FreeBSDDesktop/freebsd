@@ -237,6 +237,7 @@ linux_task_exiting(struct task_struct *task)
 static void
 linux_current_init(void *arg __unused)
 {
+	lkpi_alloc_current = linux_alloc_current;
 	linuxkpi_thread_dtor_tag = EVENTHANDLER_REGISTER(thread_dtor,
 	    linuxkpi_thread_dtor, NULL, EVENTHANDLER_PRI_ANY);
 }
@@ -261,7 +262,7 @@ linux_current_uninit(void *arg __unused)
 		PROC_UNLOCK(p);
 	}
 	sx_sunlock(&allproc_lock);
-
 	EVENTHANDLER_DEREGISTER(thread_dtor, linuxkpi_thread_dtor_tag);
+	lkpi_alloc_current = linux_alloc_current_noop;
 }
 SYSUNINIT(linux_current, SI_SUB_EVENTHANDLER, SI_ORDER_SECOND, linux_current_uninit, NULL);

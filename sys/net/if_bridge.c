@@ -925,7 +925,7 @@ bridge_set_ifcap(struct bridge_softc *sc, struct bridge_iflist *bif, int set)
 {
 	struct ifnet *ifp = bif->bif_ifp;
 	struct ifreq ifr;
-	int error;
+	int error, mask, stuck;
 
 	BRIDGE_UNLOCK_ASSERT(sc);
 
@@ -938,10 +938,12 @@ bridge_set_ifcap(struct bridge_softc *sc, struct bridge_iflist *bif, int set)
 			if_printf(sc->sc_ifp,
 			    "error setting capabilities on %s: %d\n",
 			    ifp->if_xname, error);
-		if ((ifp->if_capenable & ~set) != 0)
+		mask = BRIDGE_IFCAPS_MASK | BRIDGE_IFCAPS_STRIP;
+		stuck = ifp->if_capenable & mask & ~set;
+		if (stuck != 0)
 			if_printf(sc->sc_ifp,
 			    "can't disable some capabilities on %s: 0x%x\n",
-			    ifp->if_xname, ifp->if_capenable & ~set);
+			    ifp->if_xname, stuck);
 	}
 }
 
@@ -1970,9 +1972,9 @@ bridge_dummynet(struct mbuf *m, struct ifnet *ifp)
 		return;
 	}
 
-	if (PFIL_HOOKED(&V_inet_pfil_hook)
+	if (PFIL_HOOKED_OUT(V_inet_pfil_head)
 #ifdef INET6
-	    || PFIL_HOOKED(&V_inet6_pfil_hook)
+	    || PFIL_HOOKED_OUT(V_inet6_pfil_head)
 #endif
 	    ) {
 		if (bridge_pfil(&m, sc->sc_ifp, ifp, PFIL_OUT) != 0)
@@ -2230,9 +2232,9 @@ bridge_forward(struct bridge_softc *sc, struct bridge_iflist *sbif,
 		ETHER_BPF_MTAP(ifp, m);
 
 	/* run the packet filter */
-	if (PFIL_HOOKED(&V_inet_pfil_hook)
+	if (PFIL_HOOKED_IN(V_inet_pfil_head)
 #ifdef INET6
-	    || PFIL_HOOKED(&V_inet6_pfil_hook)
+	    || PFIL_HOOKED_IN(V_inet6_pfil_head)
 #endif
 	    ) {
 		BRIDGE_UNLOCK(sc);
@@ -2270,9 +2272,9 @@ bridge_forward(struct bridge_softc *sc, struct bridge_iflist *sbif,
 
 	BRIDGE_UNLOCK(sc);
 
-	if (PFIL_HOOKED(&V_inet_pfil_hook)
+	if (PFIL_HOOKED_OUT(V_inet_pfil_head)
 #ifdef INET6
-	    || PFIL_HOOKED(&V_inet6_pfil_hook)
+	    || PFIL_HOOKED_OUT(V_inet6_pfil_head)
 #endif
 	    ) {
 		if (bridge_pfil(&m, ifp, dst_if, PFIL_OUT) != 0)
@@ -2409,7 +2411,7 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 
 #ifdef INET6
 #   define OR_PFIL_HOOKED_INET6 \
-	|| PFIL_HOOKED(&V_inet6_pfil_hook)
+	|| PFIL_HOOKED_IN(V_inet6_pfil_head)
 #else
 #   define OR_PFIL_HOOKED_INET6
 #endif
@@ -2427,7 +2429,7 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 			if_inc_counter(iface, IFCOUNTER_IBYTES, m->m_pkthdr.len);		\
 			/* Filter on the physical interface. */		\
 			if (V_pfil_local_phys &&			\
-			    (PFIL_HOOKED(&V_inet_pfil_hook)		\
+			    (PFIL_HOOKED_IN(V_inet_pfil_head)		\
 			     OR_PFIL_HOOKED_INET6)) {			\
 				if (bridge_pfil(&m, NULL, ifp,		\
 				    PFIL_IN) != 0 || m == NULL) {	\
@@ -2517,9 +2519,9 @@ bridge_broadcast(struct bridge_softc *sc, struct ifnet *src_if,
 	}
 
 	/* Filter on the bridge interface before broadcasting */
-	if (runfilt && (PFIL_HOOKED(&V_inet_pfil_hook)
+	if (runfilt && (PFIL_HOOKED_OUT(V_inet_pfil_head)
 #ifdef INET6
-	    || PFIL_HOOKED(&V_inet6_pfil_hook)
+	    || PFIL_HOOKED_OUT(V_inet6_pfil_head)
 #endif
 	    )) {
 		if (bridge_pfil(&m, sc->sc_ifp, NULL, PFIL_OUT) != 0)
@@ -2564,9 +2566,9 @@ bridge_broadcast(struct bridge_softc *sc, struct ifnet *src_if,
 		 * pointer so we do not redundantly filter on the bridge for
 		 * each interface we broadcast on.
 		 */
-		if (runfilt && (PFIL_HOOKED(&V_inet_pfil_hook)
+		if (runfilt && (PFIL_HOOKED_OUT(V_inet_pfil_head)
 #ifdef INET6
-		    || PFIL_HOOKED(&V_inet6_pfil_hook)
+		    || PFIL_HOOKED_OUT(V_inet6_pfil_head)
 #endif
 		    )) {
 			if (used == 0) {
@@ -3101,6 +3103,7 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 	struct ip *ip;
 	struct llc llc1;
 	u_int16_t ether_type;
+	pfil_return_t rv;
 
 	snap = 0;
 	error = -1;	/* Default error if not error == 0 */
@@ -3172,14 +3175,14 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 	}
 
 	/* Run the packet through pfil before stripping link headers */
-	if (PFIL_HOOKED(&V_link_pfil_hook) && V_pfil_ipfw != 0 &&
-			dir == PFIL_OUT && ifp != NULL) {
-
-		error = pfil_run_hooks(&V_link_pfil_hook, mp, ifp, dir, 0,
-		    NULL);
-
-		if (*mp == NULL || error != 0) /* packet consumed by filter */
-			return (error);
+	if (PFIL_HOOKED_OUT(V_link_pfil_head) && V_pfil_ipfw != 0 &&
+	    dir == PFIL_OUT && ifp != NULL) {
+		switch (pfil_run_hooks(V_link_pfil_head, mp, ifp, dir, NULL)) {
+		case PFIL_DROPPED:
+			return (EPERM);
+		case PFIL_CONSUMED:
+			return (0);
+		}
 	}
 
 	/* Strip off the Ethernet header and keep a copy. */
@@ -3217,6 +3220,7 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 	/*
 	 * Run the packet through pfil
 	 */
+	rv = PFIL_PASS;
 	switch (ether_type) {
 	case ETHERTYPE_IP:
 		/*
@@ -3226,25 +3230,19 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 		 * Keep the order:
 		 *   in_if -> bridge_if -> out_if
 		 */
-		if (V_pfil_bridge && dir == PFIL_OUT && bifp != NULL)
-			error = pfil_run_hooks(&V_inet_pfil_hook, mp, bifp,
-					dir, 0, NULL);
-
-		if (*mp == NULL || error != 0) /* filter may consume */
+		if (V_pfil_bridge && dir == PFIL_OUT && bifp != NULL && (rv =
+		    pfil_run_hooks(V_inet_pfil_head, mp, bifp, dir, NULL)) !=
+		    PFIL_PASS)
 			break;
 
-		if (V_pfil_member && ifp != NULL)
-			error = pfil_run_hooks(&V_inet_pfil_hook, mp, ifp,
-					dir, 0, NULL);
-
-		if (*mp == NULL || error != 0) /* filter may consume */
+		if (V_pfil_member && ifp != NULL && (rv =
+		    pfil_run_hooks(V_inet_pfil_head, mp, ifp, dir, NULL)) !=
+		    PFIL_PASS)
 			break;
 
-		if (V_pfil_bridge && dir == PFIL_IN && bifp != NULL)
-			error = pfil_run_hooks(&V_inet_pfil_hook, mp, bifp,
-					dir, 0, NULL);
-
-		if (*mp == NULL || error != 0) /* filter may consume */
+		if (V_pfil_bridge && dir == PFIL_IN && bifp != NULL && (rv =
+		    pfil_run_hooks(V_inet_pfil_head, mp, bifp, dir, NULL)) !=
+		    PFIL_PASS)
 			break;
 
 		/* check if we need to fragment the packet */
@@ -3280,34 +3278,32 @@ bridge_pfil(struct mbuf **mp, struct ifnet *bifp, struct ifnet *ifp, int dir)
 		break;
 #ifdef INET6
 	case ETHERTYPE_IPV6:
-		if (V_pfil_bridge && dir == PFIL_OUT && bifp != NULL)
-			error = pfil_run_hooks(&V_inet6_pfil_hook, mp, bifp,
-					dir, 0, NULL);
-
-		if (*mp == NULL || error != 0) /* filter may consume */
+		if (V_pfil_bridge && dir == PFIL_OUT && bifp != NULL && (rv =
+		    pfil_run_hooks(V_inet6_pfil_head, mp, bifp, dir, NULL)) !=
+		    PFIL_PASS)
 			break;
 
-		if (V_pfil_member && ifp != NULL)
-			error = pfil_run_hooks(&V_inet6_pfil_hook, mp, ifp,
-					dir, 0, NULL);
-
-		if (*mp == NULL || error != 0) /* filter may consume */
+		if (V_pfil_member && ifp != NULL && (rv =
+		    pfil_run_hooks(V_inet6_pfil_head, mp, ifp, dir, NULL)) !=
+		    PFIL_PASS)
 			break;
 
-		if (V_pfil_bridge && dir == PFIL_IN && bifp != NULL)
-			error = pfil_run_hooks(&V_inet6_pfil_hook, mp, bifp,
-					dir, 0, NULL);
+		if (V_pfil_bridge && dir == PFIL_IN && bifp != NULL && (rv =
+		    pfil_run_hooks(V_inet6_pfil_head, mp, bifp, dir, NULL)) !=
+		    PFIL_PASS)
+			break;
 		break;
 #endif
-	default:
-		error = 0;
-		break;
 	}
 
-	if (*mp == NULL)
-		return (error);
-	if (error != 0)
-		goto bad;
+	switch (rv) {
+	case PFIL_CONSUMED:
+		return (0);
+	case PFIL_DROPPED:
+		return (EPERM);
+	default:
+		break;
+	}
 
 	error = -1;
 

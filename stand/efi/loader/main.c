@@ -1,9 +1,10 @@
 /*-
  * Copyright (c) 2008-2010 Rui Paulo
  * Copyright (c) 2006 Marcel Moolenaar
- * Copyright (c) 2018 Netflix, Inc
  * All rights reserved.
  *
+ * Copyright (c) 2018 Netflix, Inc.
+ * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
@@ -961,6 +962,17 @@ main(int argc, CHAR16 *argv[])
 	 * normal functioning in any way...
 	 */
 	BS->SetWatchdogTimer(0, 0, 0, NULL);
+
+	/*
+	 * Initialize the trusted/forbidden certificates from UEFI.
+	 * They will be later used to verify the manifest(s),
+	 * which should contain hashes of verified files.
+	 * This needs to be initialized before any configuration files
+	 * are loaded.
+	 */
+#ifdef EFI_SECUREBOOT
+	ve_efi_init();
+#endif
 
 	/*
 	 * Try and find a good currdev based on the image that was booted.
