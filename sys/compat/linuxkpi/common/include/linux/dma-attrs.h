@@ -42,8 +42,6 @@
 #define	DMA_ATTR_NO_WARN		(1 << 8)
 #define	DMA_ATTR_PRIVILEGED		(1 << 9)
 
-#define __DMA_ATTRS_LONGS BITS_TO_LONGS(DMA_ATTR_MAX)
-
 struct dma_attrs {
 	unsigned long flags;
 };

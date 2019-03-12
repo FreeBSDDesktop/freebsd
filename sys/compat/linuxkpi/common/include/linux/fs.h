@@ -326,10 +326,10 @@ void linux_shmem_truncate_range(vm_object_t, loff_t, loff_t);
 static inline int
 simple_open(struct inode *inode, struct file *file)
 {
-	// BSDFIXME: Is it OK to do same as Linux here??
+
 	if (inode->i_private)
 		file->private_data = inode->i_private;
-	return 0;
+	return (0);
 }
 
 #endif /* _LINUX_FS_H_ */

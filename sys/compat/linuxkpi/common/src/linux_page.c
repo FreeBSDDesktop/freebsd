@@ -67,7 +67,7 @@ void
 si_meminfo(struct sysinfo *si)
 {
 	si->totalram = physmem;
-	si->totalhigh = 0; /* FIXME: Correct value for i386? */
+	si->totalhigh = 0;
 	si->mem_unit = PAGE_SIZE;
 }
 

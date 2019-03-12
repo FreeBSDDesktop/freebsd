@@ -67,7 +67,6 @@ linux_alloc_current(struct thread *td, int flags)
 	ts->task_thread = td;
 	ts->comm = td->td_name;
 	ts->pid = td->td_tid;
-	/* BSDFIXME group leader? */
 	ts->group_leader = ts;
 	atomic_set(&ts->usage, 1);
 	atomic_set(&ts->state, TASK_RUNNING);
@@ -220,7 +219,6 @@ linux_get_pid_task(pid_t pid)
 bool
 linux_task_exiting(struct task_struct *task)
 {
-	/* BSDFIXME: Get more eyes on this */
 	struct proc *p;
 	bool ret;
 

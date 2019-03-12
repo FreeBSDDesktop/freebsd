@@ -183,7 +183,7 @@ timeval_to_ktime(struct timeval tv)
 static inline int64_t
 timespec64_to_ns(struct timespec64 *ts)
 {
-	return ((int64_t) ts->tv_sec * NSEC_PER_SEC) + ts->tv_nsec;
+	return (timespec_to_ns(ts));
 }
 
 #define	ktime_to_timespec(kt)		ns_to_timespec(kt)
