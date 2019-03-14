@@ -120,6 +120,13 @@ int	ida_simple_get(struct ida *ida, unsigned int start, unsigned int end,
     gfp_t gfp_mask);
 void	ida_simple_remove(struct ida *ida, unsigned int id);
 
+static inline void
+ida_free(struct ida *ida, int id)
+{
+
+	ida_remove(ida, id);
+}
+
 static inline int
 ida_get_new(struct ida *ida, int *p_id)
 {

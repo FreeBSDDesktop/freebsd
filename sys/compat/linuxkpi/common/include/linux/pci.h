@@ -869,10 +869,16 @@ pcie_get_speed_cap(struct pci_dev *dev)
 	uint32_t lnkcap, lnkcap2;
 	int error, pos;
 
-	root = device_get_parent(device_get_parent(
-	    device_get_parent(dev->dev.bsddev)));
+	root = device_get_parent(dev->dev.bsddev);
+	if (root == NULL)
+		return (PCI_SPEED_UNKNOWN);
+	root = device_get_parent(root);
+	if (root == NULL)
+		return (PCI_SPEED_UNKNOWN);
+	root = device_get_parent(root);
+	if (root == NULL)
+		return (PCI_SPEED_UNKNOWN);
 
-	/* we've been informed via and serverworks don't make the cut */
 	if (pci_get_vendor(root) == PCI_VENDOR_ID_VIA ||
 	    pci_get_vendor(root) == PCI_VENDOR_ID_SERVERWORKS)
 		return (PCI_SPEED_UNKNOWN);
@@ -914,7 +920,7 @@ pcie_get_width_cap(struct pci_dev *dev)
 	if (lnkcap)
 		return ((lnkcap & PCI_EXP_LNKCAP_MLW) >> 4);
 
-	return PCIE_LNK_WIDTH_UNKNOWN;
+	return (PCIE_LNK_WIDTH_UNKNOWN);
 }
 
 #endif	/* _LINUX_PCI_H_ */
