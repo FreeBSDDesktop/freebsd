@@ -112,7 +112,6 @@ struct ida {
 int	ida_pre_get(struct ida *ida, gfp_t gfp_mask);
 int	ida_get_new_above(struct ida *ida, int starting_id, int *p_id);
 void	ida_remove(struct ida *ida, int id);
-void	ida_free(struct ida *ida, int id);
 void	ida_destroy(struct ida *ida);
 void	ida_init(struct ida *ida);
 
