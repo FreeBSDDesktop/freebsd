@@ -56,9 +56,6 @@ struct linux_cdev {
 	u_int		siref;
 };
 
-void linux_destroy_dev(struct linux_cdev *);
-void linux_cdev_deref(struct linux_cdev *);
-
 static inline void
 cdev_init(struct linux_cdev *cdev, const struct file_operations *ops)
 {
@@ -138,13 +135,14 @@ cdev_add_ext(struct linux_cdev *cdev, dev_t dev, uid_t uid, gid_t gid, int mode)
 	return (0);
 }
 
+void linux_destroy_dev(struct linux_cdev *);
+
 static inline void
 cdev_del(struct linux_cdev *cdev)
 {
 
 	linux_destroy_dev(cdev);
 	kobject_put(&cdev->kobj);
-	linux_cdev_deref(cdev);
 }
 
 struct linux_cdev *linux_find_cdev(const char *name, unsigned major, unsigned minor);
