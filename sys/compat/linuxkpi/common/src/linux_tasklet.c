@@ -56,7 +56,7 @@ __FBSDID("$FreeBSD$");
 
 struct tasklet_worker {
 	struct mtx mtx;
-	TAILQ_HEAD(, tasklet_struct) head;
+	TAILQ_HEAD(tasklet_list, tasklet_struct) head;
 	struct grouptask gtask;
 } __aligned(CACHE_LINE_SIZE);
 
@@ -69,12 +69,13 @@ static void
 tasklet_handler(void *arg)
 {
 	struct tasklet_worker *tw = (struct tasklet_worker *)arg;
-	struct tasklet_struct *ts, *first;
+	struct tasklet_struct *ts;
+	struct tasklet_struct *last;
 
 	linux_set_current(curthread);
 
 	TASKLET_WORKER_LOCK(tw);
-	first = TAILQ_FIRST(&tw->head);
+	last = TAILQ_LAST(&tw->head, tasklet_list);
 	while (1) {
 		ts = TAILQ_FIRST(&tw->head);
 		if (ts == NULL)
@@ -95,7 +96,7 @@ tasklet_handler(void *arg)
 		} else {
 			TAILQ_INSERT_TAIL(&tw->head, ts, entry);
 		}
-		if (TAILQ_FIRST(&tw->head) == first)
+		if (ts == last)
 			break;
 	}
 	TASKLET_WORKER_UNLOCK(tw);
@@ -150,7 +151,7 @@ tasklet_init(struct tasklet_struct *ts,
 	ts->entry.tqe_next = NULL;
 	ts->func = func;
 	ts->data = data;
-	ts->_state = TASKLET_ST_IDLE;
+	atomic_set_int(&(ts)->_state, TASKLET_ST_IDLE);
 	atomic_set(&ts->count, 0);
 }
 
@@ -218,7 +219,6 @@ void
 tasklet_enable(struct tasklet_struct *ts)
 {
 
-	barrier();
 	atomic_dec(&ts->count);
 }
 
@@ -234,7 +234,6 @@ tasklet_disable(struct tasklet_struct *ts)
 {
 
 	atomic_inc(&ts->count);
-	barrier();
 	tasklet_unlock_wait(ts);
 	mb();
 }

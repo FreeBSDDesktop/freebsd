@@ -189,7 +189,8 @@ typedef void tasklet_func_t(unsigned long);
 struct tasklet_struct {
 	TAILQ_ENTRY(tasklet_struct) entry;
 	tasklet_func_t *func;
-	volatile u_int _state; /* Our impl differ, avoid same name as Linux */
+	/* Our state implementation is different. Avoid same name as Linux. */
+	volatile u_int _state;
 	atomic_t count;
 	unsigned long data;
 };
