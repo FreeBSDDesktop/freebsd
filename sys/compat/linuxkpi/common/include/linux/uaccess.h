@@ -60,8 +60,11 @@
 #define	get_user(_x, _p)	linux_copyin((_p), &(_x), sizeof(*(_p)))
 #define	put_user(_x, _p)	__put_user(_x, _p)
 #define	clear_user(...)		linux_clear_user(__VA_ARGS__)
-#ifndef access_ok /* For backwards compatibility */
-#define	access_ok(...)		linux_access_ok(__VA_ARGS__)
+
+#if defined(LINUXKPI_VERSION) && LINUXKPI_VERSION >= 50000
+#define	access_ok(a,b)		linux_access_ok(a,b)
+#else
+#define	access_ok(a,b,c)	linux_access_ok(b,c)
 #endif
 
 extern int linux_copyin(const void *uaddr, void *kaddr, size_t len);
