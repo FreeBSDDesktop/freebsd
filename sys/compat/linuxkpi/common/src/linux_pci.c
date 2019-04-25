@@ -137,9 +137,9 @@ linux_dma_tag_init(struct device *dev, u64 dma_mask)
 	    dma_mask,			/* lowaddr */
 	    BUS_SPACE_MAXADDR,		/* highaddr */
 	    NULL, NULL,			/* filtfunc, filtfuncarg */
-	    BUS_SPACE_MAXADDR,		/* maxsize */
+	    BUS_SPACE_MAXSIZE,		/* maxsize */
 	    1,				/* nsegments */
-	    BUS_SPACE_MAXADDR,		/* maxsegsz */
+	    BUS_SPACE_MAXSIZE,		/* maxsegsz */
 	    0,				/* flags */
 	    NULL, NULL,			/* lockfunc, lockfuncarg */
 	    &priv->dmat);
@@ -422,9 +422,11 @@ linux_pci_unregister_drm_driver(struct pci_driver *pdrv)
 	mtx_unlock(&Giant);
 }
 
+CTASSERT(sizeof(dma_addr_t) <= sizeof(uint64_t));
+
 struct linux_dma_obj {
 	void		*vaddr;
-	dma_addr_t	dma_addr;
+	uint64_t	dma_addr;
 	bus_dmamap_t	dmamap;
 };
 
