@@ -129,7 +129,7 @@ SUBDIR=	\
 	filemon \
 	firewire \
 	firmware \
-	fuse \
+	fusefs \
 	${_fxp} \
 	gem \
 	geom \
@@ -482,6 +482,24 @@ SUBDIR+=	fdt
     ${MACHINE_CPUARCH} == "i386"
 SUBDIR+=	linprocfs
 SUBDIR+=	linsysfs
+_ena=		ena
+.if ${MK_OFED} != "no" || defined(ALL_MODULES)
+_ibcore=	ibcore
+_ipoib=		ipoib
+_iser=		iser
+.endif
+_mlx4=		mlx4
+_mlx5=		mlx5
+.if (${MK_INET_SUPPORT} != "no" && ${MK_INET6_SUPPORT} != "no") || \
+	defined(ALL_MODULES)
+_mlx4en=	mlx4en
+_mlx5en=	mlx5en
+.endif
+.if ${MK_OFED} != "no" || defined(ALL_MODULES)
+_mthca=		mthca
+_mlx4ib=	mlx4ib
+_mlx5ib=	mlx5ib
+.endif
 .endif
 
 .if ${MK_NAND} != "no" || defined(ALL_MODULES)
@@ -587,20 +605,12 @@ _cs=		cs
 _dpms=		dpms
 _ed=		ed
 _em=		em
-_ena=		ena
 _ep=		ep
 _et=		et
 _exca=		exca
 _fe=		fe
-.if ${MK_OFED} != "no" || defined(ALL_MODULES)
-_ibcore=        ibcore
-.endif
 _if_ndis=	if_ndis
 _io=		io
-.if ${MK_OFED} != "no" || defined(ALL_MODULES)
-_ipoib=         ipoib
-_iser=		iser
-.endif
 _ix=		ix
 _ixv=		ixv
 _linux=		linux
@@ -672,18 +682,6 @@ _ipwfw=		ipwfw
 _iwifw=		iwifw
 _iwmfw=		iwmfw
 _iwnfw=		iwnfw
-.endif
-_mlx4=		mlx4
-_mlx5=		mlx5
-.if (${MK_INET_SUPPORT} != "no" && ${MK_INET6_SUPPORT} != "no") || \
-	defined(ALL_MODULES)
-_mlx4en=	mlx4en
-_mlx5en=	mlx5en
-.endif
-.if ${MK_OFED} != "no" || defined(ALL_MODULES)
-_mthca=		mthca
-_mlx4ib=	mlx4ib
-_mlx5ib=	mlx5ib
 .endif
 _mly=		mly
 _nfe=		nfe

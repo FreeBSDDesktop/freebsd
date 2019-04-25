@@ -136,7 +136,7 @@ SYSCTL_INT(_kern, KERN_SAVED_IDS, saved_ids, CTLFLAG_RD|CTLFLAG_CAPRD,
     SYSCTL_NULL_INT_PTR, 0, "Whether saved set-group/user ID is available");
 #endif
 
-char kernelname[MAXPATHLEN] = "/kernel";	/* XXX bloat */
+char kernelname[MAXPATHLEN] = "/boot/kernel/kernel";	/* XXX bloat */
 
 SYSCTL_STRING(_kern, KERN_BOOTFILE, bootfile, CTLFLAG_RW | CTLFLAG_MPSAFE,
     kernelname, sizeof kernelname, "Name of kernel file booted");
@@ -159,15 +159,8 @@ sysctl_kern_arnd(SYSCTL_HANDLER_ARGS)
 	char buf[256];
 	size_t len;
 
-	/*-
-	 * This is one of the very few legitimate uses of read_random(9).
-	 * Use of arc4random(9) is not recommended as that will ignore
-	 * an unsafe (i.e. unseeded) random(4).
-	 *
-	 * If random(4) is not seeded, then this returns 0, so the
-	 * sysctl will return a zero-length buffer.
-	 */
-	len = read_random(buf, MIN(req->oldlen, sizeof(buf)));
+	len = MIN(req->oldlen, sizeof(buf));
+	read_random(buf, len);
 	return (SYSCTL_OUT(req, buf, len));
 }
 
@@ -187,7 +180,8 @@ sysctl_hw_physmem(SYSCTL_HANDLER_ARGS)
 	return (sysctl_handle_long(oidp, &val, 0, req));
 }
 SYSCTL_PROC(_hw, HW_PHYSMEM, physmem, CTLTYPE_ULONG | CTLFLAG_RD,
-    0, 0, sysctl_hw_physmem, "LU", "");
+    0, 0, sysctl_hw_physmem, "LU",
+    "Amount of physical memory (in bytes)");
 
 static int
 sysctl_hw_realmem(SYSCTL_HANDLER_ARGS)
@@ -201,7 +195,8 @@ sysctl_hw_realmem(SYSCTL_HANDLER_ARGS)
 	return (sysctl_handle_long(oidp, &val, 0, req));
 }
 SYSCTL_PROC(_hw, HW_REALMEM, realmem, CTLTYPE_ULONG | CTLFLAG_RD,
-    0, 0, sysctl_hw_realmem, "LU", "");
+    0, 0, sysctl_hw_realmem, "LU",
+    "Amount of memory (in bytes) reported by the firmware");
 
 static int
 sysctl_hw_usermem(SYSCTL_HANDLER_ARGS)
@@ -216,9 +211,11 @@ sysctl_hw_usermem(SYSCTL_HANDLER_ARGS)
 	return (sysctl_handle_long(oidp, &val, 0, req));
 }
 SYSCTL_PROC(_hw, HW_USERMEM, usermem, CTLTYPE_ULONG | CTLFLAG_RD,
-    0, 0, sysctl_hw_usermem, "LU", "");
+    0, 0, sysctl_hw_usermem, "LU",
+    "Amount of memory (in bytes) which is not wired");
 
-SYSCTL_LONG(_hw, OID_AUTO, availpages, CTLFLAG_RD, &physmem, 0, "");
+SYSCTL_LONG(_hw, OID_AUTO, availpages, CTLFLAG_RD, &physmem, 0,
+    "Amount of physical memory (in pages)");
 
 u_long pagesizes[MAXPAGESIZES] = { PAGE_SIZE };
 

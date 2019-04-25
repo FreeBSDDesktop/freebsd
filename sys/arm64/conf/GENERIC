@@ -163,6 +163,11 @@ device		vnic		# Cavium ThunderX NIC
 device		al_eth		# Annapurna Alpine Ethernet NIC
 device		dwc_rk		# Rockchip Designware
 
+# Etherswitch devices
+device		etherswitch	# Enable etherswitch support
+device		miiproxy	# Required for etherswitch
+device		e6000sw		# Marvell mv88e6085 based switches
+
 # Block devices
 device		ahci
 device		scbus
@@ -170,6 +175,11 @@ device		da
 
 # ATA/SCSI peripherals
 device		pass		# Passthrough device (direct ATA/SCSI access)
+
+# NVM Express (NVMe) support
+device		nvme		# base NVMe driver
+options 	NVME_USE_NVD=0	# prefer the cam(4) based nda(4) driver
+device		nvd		# expose NVMe namespaces as disks, depends on nvme
 
 # MMC/SD/SDIO Card slot support
 device		sdhci
@@ -223,6 +233,7 @@ device		iic
 device		twsi		# Allwinner I2C controller
 device		rk_i2c		# RockChip I2C controller
 device		syr827		# Silergy SYR827 PMIC
+device		sy8106a		# SY8106A Buck Regulator
 
 # Clock and reset controllers
 device		aw_ccu		# Allwinner clock controller
@@ -268,6 +279,7 @@ device		vt_efifb
 device		evdev			# input event device support
 options		EVDEV_SUPPORT		# evdev support in legacy drivers
 device		uinput			# install /dev/uinput cdev
+device		aw_cir
 
 # Pseudo devices.
 device		crypto		# core crypto support

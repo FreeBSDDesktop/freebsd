@@ -37,15 +37,12 @@ __FBSDID("$FreeBSD$");
 #include <sys/types.h>
 #include <sys/bus.h>
 #include <sys/eventhandler.h>
-#include <sys/jail.h>
 #include <sys/kernel.h>
 #include <sys/lock.h>
-#include <sys/md5.h>
 #include <sys/mutex.h>
 #include <sys/module.h>
 #include <sys/kobj.h>
 #include <sys/rman.h>
-#include <sys/proc.h>
 #include <sys/sbuf.h>
 #include <sys/smp.h>
 #include <sys/socket.h>
@@ -62,6 +59,7 @@ __FBSDID("$FreeBSD$");
 #include <net/bpf.h>
 #include <net/ethernet.h>
 #include <net/mp_ring.h>
+#include <net/pfil.h>
 #include <net/vnet.h>
 
 #include <netinet/in.h>
@@ -171,6 +169,7 @@ struct iflib_ctx {
 	uint32_t ifc_if_flags;
 	uint32_t ifc_flags;
 	uint32_t ifc_max_fl_buf_size;
+	uint32_t ifc_rx_mbuf_sz;
 
 	int ifc_link_state;
 	int ifc_link_irq;
@@ -206,7 +205,7 @@ struct iflib_ctx {
 #define isc_legacy_intr ifc_txrx.ift_legacy_intr
 	eventhandler_tag ifc_vlan_attach_event;
 	eventhandler_tag ifc_vlan_detach_event;
-	uint8_t ifc_mac[ETHER_ADDR_LEN];
+	struct ether_addr ifc_mac;
 	char ifc_mtx_name[16];
 };
 
@@ -249,7 +248,7 @@ void
 iflib_set_mac(if_ctx_t ctx, uint8_t mac[ETHER_ADDR_LEN])
 {
 
-	bcopy(mac, ctx->ifc_mac, ETHER_ADDR_LEN);
+	bcopy(mac, ctx->ifc_mac.octet, ETHER_ADDR_LEN);
 }
 
 if_softc_ctx_t
@@ -434,6 +433,7 @@ struct iflib_rxq {
 	if_ctx_t	ifr_ctx;
 	iflib_fl_t	ifr_fl;
 	uint64_t	ifr_rx_irq;
+	struct pfil_head	*pfil;
 	uint16_t	ifr_id;
 	uint8_t		ifr_lro_enabled;
 	uint8_t		ifr_nfl;
@@ -453,7 +453,6 @@ struct iflib_rxq {
 
 typedef struct if_rxsd {
 	caddr_t *ifsd_cl;
-	struct mbuf **ifsd_m;
 	iflib_fl_t ifsd_fl;
 	qidx_t ifsd_cidx;
 } *if_rxsd_t;
@@ -654,7 +653,6 @@ static int iflib_fast_intrs;
 static int iflib_rx_unavail;
 static int iflib_rx_ctx_inactive;
 static int iflib_rx_if_input;
-static int iflib_rx_mbuf_null;
 static int iflib_rxd_flush;
 
 static int iflib_verbose_debug;
@@ -671,8 +669,6 @@ SYSCTL_INT(_net_iflib, OID_AUTO, rx_ctx_inactive, CTLFLAG_RD,
 		   &iflib_rx_ctx_inactive, 0, "# times rxeof called with inactive context");
 SYSCTL_INT(_net_iflib, OID_AUTO, rx_if_input, CTLFLAG_RD,
 		   &iflib_rx_if_input, 0, "# times rxeof called if_input");
-SYSCTL_INT(_net_iflib, OID_AUTO, rx_mbuf_null, CTLFLAG_RD,
-		   &iflib_rx_mbuf_null, 0, "# times rxeof got null mbuf");
 SYSCTL_INT(_net_iflib, OID_AUTO, rxd_flush, CTLFLAG_RD,
 	         &iflib_rxd_flush, 0, "# times rxd_flush called");
 SYSCTL_INT(_net_iflib, OID_AUTO, verbose_debug, CTLFLAG_RW,
@@ -691,7 +687,7 @@ iflib_debug_reset(void)
 		iflib_task_fn_rxs = iflib_rx_intr_enables = iflib_fast_intrs =
 		iflib_rx_unavail =
 		iflib_rx_ctx_inactive = iflib_rx_if_input =
-		iflib_rx_mbuf_null = iflib_rxd_flush = 0;
+		iflib_rxd_flush = 0;
 }
 
 #else
@@ -1273,38 +1269,6 @@ prefetch2cachelines(void *x)
 #define prefetch(x)
 #define prefetch2cachelines(x)
 #endif
-
-static void
-iflib_gen_mac(if_ctx_t ctx)
-{
-	struct thread *td;
-	MD5_CTX mdctx;
-	char uuid[HOSTUUIDLEN+1];
-	char buf[HOSTUUIDLEN+16];
-	uint8_t *mac;
-	unsigned char digest[16];
-
-	td = curthread;
-	mac = ctx->ifc_mac;
-	uuid[HOSTUUIDLEN] = 0;
-	bcopy(td->td_ucred->cr_prison->pr_hostuuid, uuid, HOSTUUIDLEN);
-	snprintf(buf, HOSTUUIDLEN+16, "%s-%s", uuid, device_get_nameunit(ctx->ifc_dev));
-	/*
-	 * Generate a pseudo-random, deterministic MAC
-	 * address based on the UUID and unit number.
-	 * The FreeBSD Foundation OUI of 58-9C-FC is used.
-	 */
-	MD5Init(&mdctx);
-	MD5Update(&mdctx, buf, strlen(buf));
-	MD5Final(digest, &mdctx);
-
-	mac[0] = 0x58;
-	mac[1] = 0x9C;
-	mac[2] = 0xFC;
-	mac[3] = digest[0];
-	mac[4] = digest[1];
-	mac[5] = digest[2];
-}
 
 static void
 iru_init(if_rxd_update_t iru, iflib_rxq_t rxq, uint8_t flid)
@@ -2036,11 +2000,12 @@ _iflib_fl_refill(if_ctx_t ctx, iflib_fl_t fl, int count)
 		bus_dmamap_sync(fl->ifl_buf_tag, sd_map[frag_idx],
 		    BUS_DMASYNC_PREREAD);
 
-		MPASS(sd_m[frag_idx] == NULL);
-		if ((m = m_gethdr(M_NOWAIT, MT_NOINIT)) == NULL) {
-			break;
+		if (sd_m[frag_idx] == NULL) {
+			if ((m = m_gethdr(M_NOWAIT, MT_NOINIT)) == NULL) {
+				break;
+			}
+			sd_m[frag_idx] = m;
 		}
-		sd_m[frag_idx] = m;
 		bit_set(fl->ifl_rx_bitmap, frag_idx);
 #if MEMORY_LOGGING
 		fl->ifl_m_enqueued++;
@@ -2172,7 +2137,6 @@ iflib_fl_setup(iflib_fl_t fl)
 {
 	iflib_rxq_t rxq = fl->ifl_rxq;
 	if_ctx_t ctx = rxq->ifr_ctx;
-	if_softc_ctx_t sctx = &ctx->ifc_softc_ctx;
 
 	bit_nclear(fl->ifl_rx_bitmap, 0, fl->ifl_size - 1);
 	/*
@@ -2181,14 +2145,7 @@ iflib_fl_setup(iflib_fl_t fl)
 	iflib_fl_bufs_free(fl);
 	/* Now replenish the mbufs */
 	MPASS(fl->ifl_credits == 0);
-	/*
-	 * XXX don't set the max_frame_size to larger
-	 * than the hardware can handle
-	 */
-	if (sctx->isc_max_frame_size <= 2048)
-		fl->ifl_buf_size = MCLBYTES;
-	else
-		fl->ifl_buf_size = MJUMPAGESIZE;
+	fl->ifl_buf_size = ctx->ifc_rx_mbuf_sz;
 	if (fl->ifl_buf_size > ctx->ifc_max_fl_buf_size)
 		ctx->ifc_max_fl_buf_size = fl->ifl_buf_size;
 	fl->ifl_cltype = m_gettype(fl->ifl_buf_size);
@@ -2314,6 +2271,27 @@ iflib_timer(void *arg)
 }
 
 static void
+iflib_calc_rx_mbuf_sz(if_ctx_t ctx)
+{
+	if_softc_ctx_t sctx = &ctx->ifc_softc_ctx;
+
+	/*
+	 * XXX don't set the max_frame_size to larger
+	 * than the hardware can handle
+	 */
+	if (sctx->isc_max_frame_size <= MCLBYTES)
+		ctx->ifc_rx_mbuf_sz = MCLBYTES;
+	else
+		ctx->ifc_rx_mbuf_sz = MJUMPAGESIZE;
+}
+
+uint32_t
+iflib_get_rx_mbuf_sz(if_ctx_t ctx)
+{
+	return (ctx->ifc_rx_mbuf_sz);
+}
+
+static void
 iflib_init_locked(if_ctx_t ctx)
 {
 	if_softc_ctx_t sctx = &ctx->ifc_softc_ctx;
@@ -2347,6 +2325,14 @@ iflib_init_locked(if_ctx_t ctx)
 		CALLOUT_UNLOCK(txq);
 		iflib_netmap_txq_init(ctx, txq);
 	}
+
+	/*
+	 * Calculate a suitable Rx mbuf size prior to calling IFDI_INIT, so
+	 * that drivers can use the value when setting up the hardware receive
+	 * buffers.
+	 */
+	iflib_calc_rx_mbuf_sz(ctx);
+
 #ifdef INVARIANTS
 	i = if_getdrvflags(ifp);
 #endif
@@ -2496,13 +2482,15 @@ prefetch_pkts(iflib_fl_t fl, int cidx)
 	prefetch(fl->ifl_sds.ifsd_cl[(cidx + 4) & (nrxd-1)]);
 }
 
-static void
-rxd_frag_to_sd(iflib_rxq_t rxq, if_rxd_frag_t irf, int unload, if_rxsd_t sd)
+static struct mbuf *
+rxd_frag_to_sd(iflib_rxq_t rxq, if_rxd_frag_t irf, bool unload, if_rxsd_t sd,
+    int *pf_rv, if_rxd_info_t ri)
 {
-	int flid, cidx;
 	bus_dmamap_t map;
 	iflib_fl_t fl;
-	int next;
+	caddr_t payload;
+	struct mbuf *m;
+	int flid, cidx, len, next;
 
 	map = NULL;
 	flid = irf->irf_flid;
@@ -2510,7 +2498,7 @@ rxd_frag_to_sd(iflib_rxq_t rxq, if_rxd_frag_t irf, int unload, if_rxsd_t sd)
 	fl = &rxq->ifr_fl[flid];
 	sd->ifsd_fl = fl;
 	sd->ifsd_cidx = cidx;
-	sd->ifsd_m = &fl->ifl_sds.ifsd_m[cidx];
+	m = fl->ifl_sds.ifsd_m[cidx];
 	sd->ifsd_cl = &fl->ifl_sds.ifsd_cl[cidx];
 	fl->ifl_credits--;
 #if MEMORY_LOGGING
@@ -2526,39 +2514,89 @@ rxd_frag_to_sd(iflib_rxq_t rxq, if_rxd_frag_t irf, int unload, if_rxsd_t sd)
 	/* not valid assert if bxe really does SGE from non-contiguous elements */
 	MPASS(fl->ifl_cidx == cidx);
 	bus_dmamap_sync(fl->ifl_buf_tag, map, BUS_DMASYNC_POSTREAD);
+
+	if (rxq->pfil != NULL && PFIL_HOOKED_IN(rxq->pfil) && pf_rv != NULL) {
+		payload  = *sd->ifsd_cl;
+		payload +=  ri->iri_pad;
+		len = ri->iri_len - ri->iri_pad;
+		*pf_rv = pfil_run_hooks(rxq->pfil, payload, ri->iri_ifp,
+		    len | PFIL_MEMPTR | PFIL_IN, NULL);
+		switch (*pf_rv) {
+		case PFIL_DROPPED:
+		case PFIL_CONSUMED:
+			/*
+			 * The filter ate it.  Everything is recycled.
+			 */
+			m = NULL;
+			unload = 0;
+			break;
+		case PFIL_REALLOCED:
+			/*
+			 * The filter copied it.  Everything is recycled.
+			 */
+			m = pfil_mem2mbuf(payload);
+			unload = 0;
+			break;
+		case PFIL_PASS:
+			/*
+			 * Filter said it was OK, so receive like
+			 * normal
+			 */
+			fl->ifl_sds.ifsd_m[cidx] = NULL;
+			break;
+		default:
+			MPASS(0);
+		}
+	} else {
+		fl->ifl_sds.ifsd_m[cidx] = NULL;
+		*pf_rv = PFIL_PASS;
+	}
+
 	if (unload)
 		bus_dmamap_unload(fl->ifl_buf_tag, map);
 	fl->ifl_cidx = (fl->ifl_cidx + 1) & (fl->ifl_size-1);
 	if (__predict_false(fl->ifl_cidx == 0))
 		fl->ifl_gen = 0;
 	bit_clear(fl->ifl_rx_bitmap, cidx);
+	return (m);
 }
 
 static struct mbuf *
-assemble_segments(iflib_rxq_t rxq, if_rxd_info_t ri, if_rxsd_t sd)
+assemble_segments(iflib_rxq_t rxq, if_rxd_info_t ri, if_rxsd_t sd, int *pf_rv)
 {
-	int i, padlen , flags;
 	struct mbuf *m, *mh, *mt;
 	caddr_t cl;
+	int  *pf_rv_ptr, flags, i, padlen;
+	bool consumed;
 
 	i = 0;
 	mh = NULL;
+	consumed = false;
+	*pf_rv = PFIL_PASS;
+	pf_rv_ptr = pf_rv;
 	do {
-		rxd_frag_to_sd(rxq, &ri->iri_frags[i], TRUE, sd);
+		m = rxd_frag_to_sd(rxq, &ri->iri_frags[i], !consumed, sd,
+		    pf_rv_ptr, ri);
 
 		MPASS(*sd->ifsd_cl != NULL);
-		MPASS(*sd->ifsd_m != NULL);
 
-		/* Don't include zero-length frags */
-		if (ri->iri_frags[i].irf_len == 0) {
+		/*
+		 * Exclude zero-length frags & frags from
+		 * packets the filter has consumed or dropped
+		 */
+		if (ri->iri_frags[i].irf_len == 0 || consumed ||
+		    *pf_rv == PFIL_CONSUMED || *pf_rv == PFIL_DROPPED) {
+			if (mh == NULL) {
+				/* everything saved here */
+				consumed = true;
+				pf_rv_ptr = NULL;
+				continue;
+			}
 			/* XXX we can save the cluster here, but not the mbuf */
-			m_init(*sd->ifsd_m, M_NOWAIT, MT_DATA, 0);
-			m_free(*sd->ifsd_m);
-			*sd->ifsd_m = NULL;
+			m_init(m, M_NOWAIT, MT_DATA, 0);
+			m_free(m);
 			continue;
 		}
-		m = *sd->ifsd_m;
-		*sd->ifsd_m = NULL;
 		if (mh == NULL) {
 			flags = M_PKTHDR|M_EXT;
 			mh = mt = m;
@@ -2595,22 +2633,28 @@ iflib_rxd_pkt_get(iflib_rxq_t rxq, if_rxd_info_t ri)
 {
 	struct if_rxsd sd;
 	struct mbuf *m;
+	int pf_rv;
 
 	/* should I merge this back in now that the two paths are basically duplicated? */
 	if (ri->iri_nfrags == 1 &&
 	    ri->iri_frags[0].irf_len <= MIN(IFLIB_RX_COPY_THRESH, MHLEN)) {
-		rxd_frag_to_sd(rxq, &ri->iri_frags[0], FALSE, &sd);
-		m = *sd.ifsd_m;
-		*sd.ifsd_m = NULL;
-		m_init(m, M_NOWAIT, MT_DATA, M_PKTHDR);
+		m = rxd_frag_to_sd(rxq, &ri->iri_frags[0], false, &sd,
+		    &pf_rv, ri);
+		if (pf_rv != PFIL_PASS && pf_rv != PFIL_REALLOCED)
+			return (m);
+		if (pf_rv == PFIL_PASS) {
+			m_init(m, M_NOWAIT, MT_DATA, M_PKTHDR);
 #ifndef __NO_STRICT_ALIGNMENT
-		if (!IP_ALIGNED(m))
-			m->m_data += 2;
+			if (!IP_ALIGNED(m))
+				m->m_data += 2;
 #endif
-		memcpy(m->m_data, *sd.ifsd_cl, ri->iri_len);
-		m->m_len = ri->iri_frags[0].irf_len;
-       } else {
-		m = assemble_segments(rxq, ri, &sd);
+			memcpy(m->m_data, *sd.ifsd_cl, ri->iri_len);
+			m->m_len = ri->iri_frags[0].irf_len;
+		}
+	} else {
+		m = assemble_segments(rxq, ri, &sd, &pf_rv);
+		if (pf_rv != PFIL_PASS && pf_rv != PFIL_REALLOCED)
+			return (m);
 	}
 	m->m_pkthdr.len = ri->iri_len;
 	m->m_pkthdr.rcvif = ri->iri_ifp;
@@ -2707,6 +2751,8 @@ iflib_rxeof(iflib_rxq_t rxq, qidx_t budget)
 		return (false);
 	}
 
+	/* pfil needs the vnet to be set */
+	CURVNET_SET_QUIET(ifp->if_vnet);
 	for (budget_left = budget; budget_left > 0 && avail > 0;) {
 		if (__predict_false(!CTX_ACTIVE(ctx))) {
 			DBG_COUNTER_INC(rx_ctx_inactive);
@@ -2724,6 +2770,8 @@ iflib_rxeof(iflib_rxq_t rxq, qidx_t budget)
 
 		if (err)
 			goto err;
+		rx_pkts += 1;
+		rx_bytes += ri.iri_len;
 		if (sctx->isc_flags & IFLIB_HAS_RXCQ) {
 			*cidxp = ri.iri_cidx;
 			/* Update our consumer index */
@@ -2746,10 +2794,9 @@ iflib_rxeof(iflib_rxq_t rxq, qidx_t budget)
 		if (avail == 0 && budget_left)
 			avail = iflib_rxd_avail(ctx, rxq, *cidxp, budget_left);
 
-		if (__predict_false(m == NULL)) {
-			DBG_COUNTER_INC(rx_mbuf_null);
+		if (__predict_false(m == NULL))
 			continue;
-		}
+
 		/* imm_pkt: -- cxgb */
 		if (mh == NULL)
 			mh = mt = m;
@@ -2758,6 +2805,7 @@ iflib_rxeof(iflib_rxq_t rxq, qidx_t budget)
 			mt = m;
 		}
 	}
+	CURVNET_RESTORE();
 	/* make sure that we can refill faster than drain */
 	for (i = 0, fl = &rxq->ifr_fl[0]; i < sctx->isc_nfl; i++, fl++)
 		__iflib_fl_refill_lt(ctx, fl, budget + 8);
@@ -3276,9 +3324,14 @@ defrag:
 				txq->ift_mbuf_defrag++;
 				m_head = m_defrag(*m_headp, M_NOWAIT);
 			}
-			remap++;
-			if (__predict_false(m_head == NULL))
+			/*
+			 * remap should never be >1 unless bus_dmamap_load_mbuf_sg
+			 * failed to map an mbuf that was run through m_defrag
+			 */
+			MPASS(remap <= 1);
+			if (__predict_false(m_head == NULL || remap > 1))
 				goto defrag_failed;
+			remap++;
 			*m_headp = m_head;
 			goto retry;
 			break;
@@ -3871,7 +3924,7 @@ iflib_if_transmit(if_t ifp, struct mbuf *m)
 	if (__predict_false((ifp->if_drv_flags & IFF_DRV_RUNNING) == 0 || !LINK_ACTIVE(ctx))) {
 		DBG_COUNTER_INC(tx_frees);
 		m_freem(m);
-		return (ENOBUFS);
+		return (ENETDOWN);
 	}
 
 	MPASS(m->m_nextpkt == NULL);
@@ -4374,6 +4427,40 @@ iflib_reset_qvalues(if_ctx_t ctx)
 	}
 }
 
+static void
+iflib_add_pfil(if_ctx_t ctx)
+{
+	struct pfil_head *pfil;
+	struct pfil_head_args pa;
+	iflib_rxq_t rxq;
+	int i;
+
+	pa.pa_version = PFIL_VERSION;
+	pa.pa_flags = PFIL_IN;
+	pa.pa_type = PFIL_TYPE_ETHERNET;
+	pa.pa_headname = ctx->ifc_ifp->if_xname;
+	pfil = pfil_head_register(&pa);
+
+	for (i = 0, rxq = ctx->ifc_rxqs; i < NRXQSETS(ctx); i++, rxq++) {
+		rxq->pfil = pfil;
+	}
+}
+
+static void
+iflib_rem_pfil(if_ctx_t ctx)
+{
+	struct pfil_head *pfil;
+	iflib_rxq_t rxq;
+	int i;
+
+	rxq = ctx->ifc_rxqs;
+	pfil = rxq->pfil;
+	for (i = 0; i < NRXQSETS(ctx); i++, rxq++) {
+		rxq->pfil = NULL;
+	}
+	pfil_head_unregister(pfil);
+}
+
 int
 iflib_device_register(device_t dev, void *sc, if_shared_ctx_t sctx, if_ctx_t *ctxp)
 {
@@ -4552,7 +4639,7 @@ iflib_device_register(device_t dev, void *sc, if_shared_ctx_t sctx, if_ctx_t *ct
 		}
 	}
 
-	ether_ifattach(ctx->ifc_ifp, ctx->ifc_mac);
+	ether_ifattach(ctx->ifc_ifp, ctx->ifc_mac.octet);
 
 	if ((err = IFDI_ATTACH_POST(ctx)) != 0) {
 		device_printf(dev, "IFDI_ATTACH_POST failed %d\n", err);
@@ -4577,6 +4664,7 @@ iflib_device_register(device_t dev, void *sc, if_shared_ctx_t sctx, if_ctx_t *ct
 
 	if_setgetcounterfn(ctx->ifc_ifp, iflib_if_get_counter);
 	iflib_add_device_sysctl_post(ctx);
+	iflib_add_pfil(ctx);
 	ctx->ifc_flags |= IFC_INIT_DONE;
 	CTX_UNLOCK(ctx);
 	return (0);
@@ -4635,13 +4723,13 @@ iflib_pseudo_register(device_t dev, if_shared_ctx_t sctx, if_ctx_t *ctxp,
 	 * XXX sanity check that ntxd & nrxd are a power of 2
 	 */
 	iflib_reset_qvalues(ctx);
-
+	CTX_LOCK(ctx);
 	if ((err = IFDI_ATTACH_PRE(ctx)) != 0) {
 		device_printf(dev, "IFDI_ATTACH_PRE failed %d\n", err);
-		goto fail_ctx_free;
+		goto fail_unlock;
 	}
 	if (sctx->isc_flags & IFLIB_GEN_MAC)
-		iflib_gen_mac(ctx);
+		ether_gen_addr(ifp, &ctx->ifc_mac);
 	if ((err = IFDI_CLONEATTACH(ctx, clctx->cc_ifc, clctx->cc_name,
 								clctx->cc_params)) != 0) {
 		device_printf(dev, "IFDI_CLONEATTACH failed %d\n", err);
@@ -4662,7 +4750,7 @@ iflib_pseudo_register(device_t dev, if_shared_ctx_t sctx, if_ctx_t *ctxp,
 
 	ifp->if_flags |= IFF_NOGROUP;
 	if (sctx->isc_flags & IFLIB_PSEUDO) {
-		ether_ifattach(ctx->ifc_ifp, ctx->ifc_mac);
+		ether_ifattach(ctx->ifc_ifp, ctx->ifc_mac.octet);
 
 		if ((err = IFDI_ATTACH_POST(ctx)) != 0) {
 			device_printf(dev, "IFDI_ATTACH_POST failed %d\n", err);
@@ -4769,7 +4857,7 @@ iflib_pseudo_register(device_t dev, if_shared_ctx_t sctx, if_ctx_t *ctxp,
 	/*
 	 * XXX What if anything do we want to do about interrupts?
 	 */
-	ether_ifattach(ctx->ifc_ifp, ctx->ifc_mac);
+	ether_ifattach(ctx->ifc_ifp, ctx->ifc_mac.octet);
 	if ((err = IFDI_ATTACH_POST(ctx)) != 0) {
 		device_printf(dev, "IFDI_ATTACH_POST failed %d\n", err);
 		goto fail_detach;
@@ -4792,6 +4880,7 @@ iflib_pseudo_register(device_t dev, if_shared_ctx_t sctx, if_ctx_t *ctxp,
 	if_setgetcounterfn(ctx->ifc_ifp, iflib_if_get_counter);
 	iflib_add_device_sysctl_post(ctx);
 	ctx->ifc_flags |= IFC_INIT_DONE;
+	CTX_UNLOCK(ctx);
 	return (0);
 fail_detach:
 	ether_ifdetach(ctx->ifc_ifp);
@@ -4800,6 +4889,8 @@ fail_queues:
 	iflib_rx_structures_free(ctx);
 fail_iflib_detach:
 	IFDI_DETACH(ctx);
+fail_unlock:
+	CTX_UNLOCK(ctx);
 fail_ctx_free:
 	free(ctx->ifc_softc, M_IFLIB);
 	free(ctx, M_IFLIB);
@@ -4908,6 +4999,7 @@ iflib_device_deregister(if_ctx_t ctx)
 
 	iflib_netmap_detach(ifp);
 	ether_ifdetach(ifp);
+	iflib_rem_pfil(ctx);
 	if (ctx->ifc_led_dev != NULL)
 		led_destroy(ctx->ifc_led_dev);
 	/* XXX drain any dependent tasks */
@@ -6230,8 +6322,8 @@ iflib_add_device_sysctl_pre(if_ctx_t ctx)
 						      CTLFLAG_RD, NULL, "IFLIB fields");
 	oid_list = SYSCTL_CHILDREN(node);
 
-	SYSCTL_ADD_STRING(ctx_list, oid_list, OID_AUTO, "driver_version",
-		       CTLFLAG_RD, ctx->ifc_sctx->isc_driver_version, 0,
+	SYSCTL_ADD_CONST_STRING(ctx_list, oid_list, OID_AUTO, "driver_version",
+		       CTLFLAG_RD, ctx->ifc_sctx->isc_driver_version,
 		       "driver version");
 
 	SYSCTL_ADD_U16(ctx_list, oid_list, OID_AUTO, "override_ntxqs",
