@@ -197,7 +197,7 @@ ktime_get_ns(void)
 {
 	struct timespec ts;
 
-	ktime_get_ts64(&ts);
+	ktime_get_ts(&ts);
 
 	return (ktime_to_ns(timespec_to_ktime(ts)));
 }
@@ -207,7 +207,7 @@ ktime_get(void)
 {
 	struct timespec ts;
 
-	ktime_get_ts64(&ts);
+	ktime_get_ts(&ts);
 	return (timespec_to_ktime(ts));
 }
 
