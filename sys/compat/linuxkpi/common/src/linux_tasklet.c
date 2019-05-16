@@ -43,16 +43,16 @@ __FBSDID("$FreeBSD$");
 #define	TASKLET_ST_LOOP 3
 
 #define	TASKLET_ST_CMPSET(ts, old, new)	\
-	atomic_cmpset_int((volatile u_int *)&(ts)->_state, old, new)
+	atomic_cmpset_int((volatile u_int *)&(ts)->tasklet_state, old, new)
 
 #define	TASKLET_ST_SET(ts, new)	\
-	WRITE_ONCE(*(volatile u_int *)&(ts)->_state, new)
+	WRITE_ONCE(*(volatile u_int *)&(ts)->tasklet_state, new)
 
 #define	TASKLET_ST_GET(ts) \
-	READ_ONCE(*(volatile u_int *)&(ts)->_state)
+	READ_ONCE(*(volatile u_int *)&(ts)->tasklet_state)
 
 #define	TASKLET_ST_TESTANDSET(ts, new) \
-	atomic_testandset_int((volatile u_int *)&(ts)->_state, new)
+	atomic_testandset_int((volatile u_int *)&(ts)->tasklet_state, new)
 
 struct tasklet_worker {
 	struct mtx mtx;
@@ -151,7 +151,7 @@ tasklet_init(struct tasklet_struct *ts,
 	ts->entry.tqe_next = NULL;
 	ts->func = func;
 	ts->data = data;
-	atomic_set_int(&(ts)->_state, TASKLET_ST_IDLE);
+	atomic_set_int(&ts->tasklet_state, TASKLET_ST_IDLE);
 	atomic_set(&ts->count, 0);
 }
 
@@ -222,20 +222,12 @@ tasklet_enable(struct tasklet_struct *ts)
 	atomic_dec(&ts->count);
 }
 
-bool
-tasklet_is_enabled(struct tasklet_struct *ts)
-{
-
-	return !atomic_read(&ts->count);
-}
-
 void
 tasklet_disable(struct tasklet_struct *ts)
 {
 
 	atomic_inc(&ts->count);
 	tasklet_unlock_wait(ts);
-	mb();
 }
 
 int

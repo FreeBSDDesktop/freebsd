@@ -189,8 +189,8 @@ typedef void tasklet_func_t(unsigned long);
 struct tasklet_struct {
 	TAILQ_ENTRY(tasklet_struct) entry;
 	tasklet_func_t *func;
-	/* Our state implementation is different. Avoid same name as Linux. */
-	volatile u_int _state;
+	/* Our "state" implementation is different. Avoid same name as Linux. */
+	volatile u_int tasklet_state;
 	atomic_t count;
 	unsigned long data;
 };
@@ -205,7 +205,6 @@ extern void tasklet_kill(struct tasklet_struct *);
 extern void tasklet_init(struct tasklet_struct *, tasklet_func_t *,
     unsigned long data);
 extern void tasklet_enable(struct tasklet_struct *);
-extern bool tasklet_is_enabled(struct tasklet_struct *);
 extern void tasklet_disable(struct tasklet_struct *);
 extern int tasklet_trylock(struct tasklet_struct *);
 extern void tasklet_unlock(struct tasklet_struct *);
