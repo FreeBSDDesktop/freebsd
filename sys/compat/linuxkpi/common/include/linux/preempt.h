@@ -35,7 +35,7 @@
 	(curthread->td_intr_nesting_level || curthread->td_critnest)
 
 #define	in_task() \
-	(curthread->td_intr_nesting_level == 0 && curthread->td_critnest == 0)
+	(curthread->td_priority >= PI_SOFT)
 
 #define	preempt_disable()	critical_enter()
 #define	preempt_enable()	critical_exit()
