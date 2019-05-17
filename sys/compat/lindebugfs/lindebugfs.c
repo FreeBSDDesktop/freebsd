@@ -310,8 +310,8 @@ debugfs_uninit(PFS_INIT_ARGS)
 }
 
 #ifdef PR_ALLOW_MOUNT_LINSYSFS
-PSEUDOFS(debugfs, 1, PR_ALLOW_MOUNT_LINSYSFS);
+PSEUDOFS(lindebugfs, 1, PR_ALLOW_MOUNT_LINSYSFS);
 #else
-PSEUDOFS(debugfs, 1, VFCF_JAIL);
+PSEUDOFS(lindebugfs, 1, VFCF_JAIL);
 #endif
 MODULE_DEPEND(lindebugfs, linuxkpi, 1, 1, 1);
