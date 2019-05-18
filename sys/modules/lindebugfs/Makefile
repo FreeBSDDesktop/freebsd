@@ -9,9 +9,4 @@ SRCS=	vnode_if.h \
 
 CFLAGS+= -I${SRCTOP}/sys/compat/linuxkpi/common/include
 
-.if ${MACHINE_CPUARCH} == "powerpc"
-CFLAGS+= -DSMP
-CFLAGS+= -DAIM
-.endif
-
 .include <bsd.kmod.mk>
