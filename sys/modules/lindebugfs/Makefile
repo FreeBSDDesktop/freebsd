@@ -7,7 +7,7 @@ SRCS=	vnode_if.h \
 	device_if.h bus_if.h  pci_if.h \
 	lindebugfs.c
 
-CFLAGS+= -I${SYSDIR}/compat/linuxkpi/common/include
+CFLAGS+= -I${SRCTOP}/sys/compat/linuxkpi/common/include
 
 .if ${MACHINE_CPUARCH} == "powerpc"
 CFLAGS+= -DSMP
