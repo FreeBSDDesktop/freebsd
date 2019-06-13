@@ -39,7 +39,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/select.h>
 #include <sys/uio.h>
 #include <sys/ioctl.h>
-#include <machine/atomic.h>
 #include <net/ethernet.h>
 #ifndef NETMAP_WITH_LIBS
 #define NETMAP_WITH_LIBS
@@ -150,14 +149,13 @@ struct pci_vtnet_softc {
 	struct nm_desc	*vsc_nmd;
 
 	int		vsc_rx_ready;
-	volatile int	resetting;	/* set and checked outside lock */
+	int		resetting;	/* protected by tx_mtx */
 
 	uint64_t	vsc_features;	/* negotiated features */
 	
 	struct virtio_net_config vsc_config;
 
 	pthread_mutex_t	rx_mtx;
-	int		rx_in_progress;
 	int		rx_vhdrlen;
 	int		rx_merge;	/* merged rx bufs in use */
 
@@ -189,38 +187,6 @@ static struct virtio_consts vtnet_vi_consts = {
 	VTNET_S_HOSTCAPS,	/* our capabilities */
 };
 
-/*
- * If the transmit thread is active then stall until it is done.
- */
-static void
-pci_vtnet_txwait(struct pci_vtnet_softc *sc)
-{
-
-	pthread_mutex_lock(&sc->tx_mtx);
-	while (sc->tx_in_progress) {
-		pthread_mutex_unlock(&sc->tx_mtx);
-		usleep(10000);
-		pthread_mutex_lock(&sc->tx_mtx);
-	}
-	pthread_mutex_unlock(&sc->tx_mtx);
-}
-
-/*
- * If the receive thread is active then stall until it is done.
- */
-static void
-pci_vtnet_rxwait(struct pci_vtnet_softc *sc)
-{
-
-	pthread_mutex_lock(&sc->rx_mtx);
-	while (sc->rx_in_progress) {
-		pthread_mutex_unlock(&sc->rx_mtx);
-		usleep(10000);
-		pthread_mutex_lock(&sc->rx_mtx);
-	}
-	pthread_mutex_unlock(&sc->rx_mtx);
-}
-
 static void
 pci_vtnet_reset(void *vsc)
 {
@@ -228,23 +194,32 @@ pci_vtnet_reset(void *vsc)
 
 	DPRINTF(("vtnet: device reset requested !\n"));
 
-	sc->resetting = 1;
+	/* Acquire the RX lock to block RX processing. */
+	pthread_mutex_lock(&sc->rx_mtx);
 
-	/*
-	 * Wait for the transmit and receive threads to finish their
-	 * processing.
-	 */
-	pci_vtnet_txwait(sc);
-	pci_vtnet_rxwait(sc);
+	/* Set sc->resetting and give a chance to the TX thread to stop. */
+	pthread_mutex_lock(&sc->tx_mtx);
+	sc->resetting = 1;
+	while (sc->tx_in_progress) {
+		pthread_mutex_unlock(&sc->tx_mtx);
+		usleep(10000);
+		pthread_mutex_lock(&sc->tx_mtx);
+	}
 
 	sc->vsc_rx_ready = 0;
 	sc->rx_merge = 1;
 	sc->rx_vhdrlen = sizeof(struct virtio_net_rxhdr);
 
-	/* now reset rings, MSI-X vectors, and negotiated capabilities */
+	/*
+	 * Now reset rings, MSI-X vectors, and negotiated capabilities.
+	 * Do that with the TX lock held, since we need to reset
+	 * sc->resetting.
+	 */
 	vi_reset_dev(&sc->vsc_vs);
 
 	sc->resetting = 0;
+	pthread_mutex_unlock(&sc->tx_mtx);
+	pthread_mutex_unlock(&sc->rx_mtx);
 }
 
 /*
@@ -318,9 +293,9 @@ pci_vtnet_tap_rx(struct pci_vtnet_softc *sc)
 
 	/*
 	 * But, will be called when the rx ring hasn't yet
-	 * been set up or the guest is resetting the device.
+	 * been set up.
 	 */
-	if (!sc->vsc_rx_ready || sc->resetting) {
+	if (!sc->vsc_rx_ready) {
 		/*
 		 * Drop the packet and try later.
 		 */
@@ -515,9 +490,9 @@ pci_vtnet_netmap_rx(struct pci_vtnet_softc *sc)
 
 	/*
 	 * But, will be called when the rx ring hasn't yet
-	 * been set up or the guest is resetting the device.
+	 * been set up.
 	 */
-	if (!sc->vsc_rx_ready || sc->resetting) {
+	if (!sc->vsc_rx_ready) {
 		/*
 		 * Drop the packet and try later.
 		 */
@@ -594,9 +569,7 @@ pci_vtnet_rx_callback(int fd, enum ev_type type, void *param)
 	struct pci_vtnet_softc *sc = param;
 
 	pthread_mutex_lock(&sc->rx_mtx);
-	sc->rx_in_progress = 1;
 	sc->pci_vtnet_rx(sc);
-	sc->rx_in_progress = 0;
 	pthread_mutex_unlock(&sc->rx_mtx);
 
 }
@@ -611,7 +584,7 @@ pci_vtnet_ping_rxq(void *vsc, struct vqueue_info *vq)
 	 */
 	if (sc->vsc_rx_ready == 0) {
 		sc->vsc_rx_ready = 1;
-		vq->vq_used->vu_flags |= VRING_USED_F_NO_NOTIFY;
+		vq_kick_disable(vq);
 	}
 }
 
@@ -657,7 +630,7 @@ pci_vtnet_ping_txq(void *vsc, struct vqueue_info *vq)
 
 	/* Signal the tx thread for processing */
 	pthread_mutex_lock(&sc->tx_mtx);
-	vq->vq_used->vu_flags |= VRING_USED_F_NO_NOTIFY;
+	vq_kick_disable(vq);
 	if (sc->tx_in_progress == 0)
 		pthread_cond_signal(&sc->tx_cond);
 	pthread_mutex_unlock(&sc->tx_mtx);
@@ -686,8 +659,7 @@ pci_vtnet_tx_thread(void *param)
 	for (;;) {
 		/* note - tx mutex is locked here */
 		while (sc->resetting || !vq_has_descs(vq)) {
-			vq->vq_used->vu_flags &= ~VRING_USED_F_NO_NOTIFY;
-			mb();
+			vq_kick_enable(vq);
 			if (!sc->resetting && vq_has_descs(vq))
 				break;
 
@@ -695,7 +667,7 @@ pci_vtnet_tx_thread(void *param)
 			error = pthread_cond_wait(&sc->tx_cond, &sc->tx_mtx);
 			assert(error == 0);
 		}
-		vq->vq_used->vu_flags |= VRING_USED_F_NO_NOTIFY;
+		vq_kick_disable(vq);
 		sc->tx_in_progress = 1;
 		pthread_mutex_unlock(&sc->tx_mtx);
 
@@ -921,7 +893,6 @@ pci_vtnet_init(struct vmctx *ctx, struct pci_devinst *pi, char *opts)
 
 	sc->rx_merge = 1;
 	sc->rx_vhdrlen = sizeof(struct virtio_net_rxhdr);
-	sc->rx_in_progress = 0;
 	pthread_mutex_init(&sc->rx_mtx, NULL); 
 
 	/* 
