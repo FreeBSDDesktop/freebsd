@@ -33,6 +33,21 @@
 #include <linux/list.h>
 #include <linux/rcupdate.h>
 
+#define	list_next_rcu(head)	(*((struct list_head **)(&(head)->next)))
+
+#define	list_for_each_entry_rcu(pos, head, member)	\
+	list_for_each_entry(pos, head, member)
+
+static inline void
+list_add_rcu(struct list_head *new, struct list_head *prev)
+{
+
+	new->next = prev->next;
+	new->prev = prev;
+	rcu_assign_pointer(list_next_rcu(prev), new);
+	prev->prev = new;
+}
+
 #define	hlist_first_rcu(head)	(*((struct hlist_node **)(&(head)->first)))
 #define	hlist_next_rcu(node)	(*((struct hlist_node **)(&(node)->next)))
 #define	hlist_pprev_rcu(node)	(*((struct hlist_node **)((node)->pprev)))
